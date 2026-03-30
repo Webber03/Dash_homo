@@ -702,6 +702,9 @@ async function autoRefresh(){
 
 // ── MODO TV FILIAL ───────────────────────────────────────────
 let TV_FIL = '', TV_PERIODO = 'mes', tvClockTimer = null, tvRefreshTimer = null;
+let TV_VIEW_KEY = '';
+const TV_SNAPSHOTS = {};
+let TV_ALERT = null;
 
 function buildTvFilSelect(){
   const el = $('tvFil'); if(!el) return;
@@ -745,6 +748,71 @@ function onTvFilChange(){
 }
 function switchTvFilial(){ onTvFilChange(); }
 
+function getTvRowKey(r){
+  return [r.Contrato || '', r.CPF || '', (r.Nome || '').trim()].join('|');
+}
+
+function getTvRowSig(r){
+  return [
+    (r['Data da Liberação'] || '').slice(0, 10),
+    (r['Data Comissao Loja'] || '').slice(0, 10),
+    parseFloat(r['Valor Liberado'] || 0).toFixed(2),
+    parseFloat(r['Base Comissao'] || 0).toFixed(2),
+    parseFloat(r['Comissao Loja'] || 0).toFixed(2),
+    parseFloat(r['Desconto Loja'] || 0).toFixed(2),
+    parseFloat(r['R$ Bonus Loja 1'] || 0).toFixed(2),
+    parseFloat(r['R$ Bonus Loja 2'] || 0).toFixed(2),
+    r['Status Comissao Loja'] || '',
+    r.Tipo || '',
+    r.BCO || ''
+  ].join('|');
+}
+
+function detectTvChanges(rows){
+  const key = TV_FIL + '|' + TV_PERIODO;
+  const prev = TV_SNAPSHOTS[key];
+  const cur = {};
+  rows.forEach(r => { cur[getTvRowKey(r)] = getTvRowSig(r); });
+  TV_SNAPSHOTS[key] = cur;
+  TV_VIEW_KEY = key;
+
+  if (!prev) return { novo: 0, alterado: 0, changedKeys: {} };
+
+  let novo = 0, alterado = 0;
+  const changedKeys = {};
+  Object.keys(cur).forEach(k => {
+    if (!(k in prev)) { novo++; changedKeys[k] = 'novo'; }
+    else if (prev[k] !== cur[k]) { alterado++; changedKeys[k] = 'alt'; }
+  });
+  return { novo, alterado, changedKeys };
+}
+
+function playTvAlertSound(count){
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    const ctx = new AC();
+    const t0 = ctx.currentTime;
+    const tones = count > 1 ? [880, 660] : [880];
+    tones.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t0 + i * 0.14);
+      gain.gain.exponentialRampToValueAtTime(0.16, t0 + i * 0.14 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.14 + 0.12);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0 + i * 0.14);
+      osc.stop(t0 + i * 0.14 + 0.13);
+    });
+    setTimeout(() => ctx.close(), 500);
+  } catch (e) {
+    console.warn('som TV bloqueado:', e.message);
+  }
+}
+
 function getTvData(){
   const now = new Date();
   let rows = ALL.filter(r => String(r.Filial) === TV_FIL);
@@ -777,6 +845,17 @@ function renderTv(){
   if(!TV_FIL) return;
 
   const rows = getTvData();
+  const diff = detectTvChanges(rows);
+  if ((diff.novo + diff.alterado) > 0) {
+    TV_ALERT = {
+      novo: diff.novo,
+      alterado: diff.alterado,
+      total: diff.novo + diff.alterado,
+      changedKeys: diff.changedKeys,
+      until: Date.now() + 15000
+    };
+    playTvAlertSound(TV_ALERT.total);
+  }
   const filNome = FILIAIS[TV_FIL] || TV_FIL;
 
   // KPIs
@@ -815,6 +894,13 @@ function renderTv(){
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:2rem">
+        ${TV_ALERT && Date.now() < TV_ALERT.until ? `
+          <div class="tv-update-alert">
+            <span class="tv-update-dot"></span>
+            <span>${TV_ALERT.total} atualização${TV_ALERT.total>1?'es':''}</span>
+            <small>${TV_ALERT.novo} novo${TV_ALERT.novo!==1?'s':''} · ${TV_ALERT.alterado} alterado${TV_ALERT.alterado!==1?'s':''}</small>
+          </div>
+        ` : ''}
         <div class="tv-ticker">
           <div class="tv-live-dot"></div>
           <span style="color:var(--green)">AO VIVO</span>
@@ -877,8 +963,11 @@ function renderTv(){
             <div class="tv-card-title">Últimos contratos</div>
             <span style="font-size:10px;font-family:var(--mono);color:var(--t3)">${rows.length} no período</span>
           </div>
-          ${ultimos.map(r => `
-          <div class="tv-contract-item">
+          ${ultimos.map(r => {
+            const changeType = TV_ALERT && TV_ALERT.changedKeys ? TV_ALERT.changedKeys[getTvRowKey(r)] : '';
+            const cls = changeType ? `tv-contract-item is-updated ${changeType==='novo'?'is-new':'is-changed'}` : 'tv-contract-item';
+            return `
+          <div class="${cls}">
             <div style="flex:1;min-width:0">
               <div class="tv-contract-nome">${r.Nome||'—'}</div>
               <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
@@ -890,7 +979,8 @@ function renderTv(){
               <div style="font-size:14px;font-weight:700;color:var(--y);font-family:var(--mono)">${fmt(val(r))}</div>
               <div class="tv-contract-data">${fmtData(r['Data da Liberação'])}</div>
             </div>
-          </div>`).join('')}
+          </div>`;
+          }).join('')}
         </div>
       </div>
     </div>
