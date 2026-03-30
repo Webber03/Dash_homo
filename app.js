@@ -705,6 +705,7 @@ let TV_FIL = '', TV_PERIODO = 'mes', tvClockTimer = null, tvRefreshTimer = null;
 let TV_VIEW_KEY = '';
 const TV_SNAPSHOTS = {};
 let TV_ALERT = null;
+let TV_BANNER_UNTIL = 0;
 
 function buildTvFilSelect(){
   const el = $('tvFil'); if(!el) return;
@@ -793,21 +794,25 @@ function playTvAlertSound(count){
   try {
     const ctx = new AC();
     const t0 = ctx.currentTime;
-    const tones = count > 1 ? [880, 660] : [880];
+    const tones = count > 3
+      ? [1046, 1318, 1046, 1567]
+      : count > 1
+        ? [988, 1318, 988]
+        : [1046, 1318];
     tones.forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, t0 + i * 0.14);
-      gain.gain.exponentialRampToValueAtTime(0.16, t0 + i * 0.14 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.14 + 0.12);
+      gain.gain.setValueAtTime(0.0001, t0 + i * 0.16);
+      gain.gain.exponentialRampToValueAtTime(0.42, t0 + i * 0.16 + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.16 + 0.14);
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.start(t0 + i * 0.14);
-      osc.stop(t0 + i * 0.14 + 0.13);
+      osc.start(t0 + i * 0.16);
+      osc.stop(t0 + i * 0.16 + 0.15);
     });
-    setTimeout(() => ctx.close(), 500);
+    setTimeout(() => ctx.close(), 1200);
   } catch (e) {
     console.warn('som TV bloqueado:', e.message);
   }
@@ -847,13 +852,15 @@ function renderTv(){
   const rows = getTvData();
   const diff = detectTvChanges(rows);
   if ((diff.novo + diff.alterado) > 0) {
+    const nowMs = Date.now();
     TV_ALERT = {
       novo: diff.novo,
       alterado: diff.alterado,
       total: diff.novo + diff.alterado,
       changedKeys: diff.changedKeys,
-      until: Date.now() + 15000
+      until: nowMs + 15000
     };
+    TV_BANNER_UNTIL = nowMs + 10000;
     playTvAlertSound(TV_ALERT.total);
   }
   const filNome = FILIAIS[TV_FIL] || TV_FIL;
@@ -885,6 +892,16 @@ function renderTv(){
 
   const html = `
   <div class="tv-wrap">
+    ${TV_ALERT && Date.now() < TV_BANNER_UNTIL ? `
+      <div class="tv-center-banner">
+        <div class="tv-center-banner-title">NOVA ATUALIZACAO DETECTADA</div>
+        <div class="tv-center-banner-main">${TV_ALERT.total} atualização${TV_ALERT.total>1?'es':''} na filial ${filNome}</div>
+        <div class="tv-center-banner-sub">
+          ${TV_ALERT.novo} novo${TV_ALERT.novo!==1?'s':''} · ${TV_ALERT.alterado} alterado${TV_ALERT.alterado!==1?'s':''}
+          · ${new Date().toLocaleTimeString('pt-BR')}
+        </div>
+      </div>
+    ` : ''}
     <div class="tv-header">
       <div class="tv-brand">
         <div class="tv-brand-logo">LF</div>
