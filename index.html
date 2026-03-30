@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Contratos — Progestor</title>
+<link rel="icon" type="image/png" href="/icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-brand">
+    <div class="brand-logo">LF</div>
+    <span class="brand-name">LF Promotora</span>
+    <div class="brand-sep"></div>
+    <span class="brand-sub">Painel de Contratos</span>
+  </div>
+  <div class="topbar-right">
+    <div class="chip"><div class="live"></div><span id="status-txt">iniciando</span></div>
+    <div class="chip chip-y">↻ <span id="countdown">60s</span></div>
+    <span id="ts" style="font-size:11px;color:var(--t3);font-family:var(--mono)">—</span>
+    <button class="btn-link" onclick="openUrlModal()">⚙ URL</button>
+    <button class="btn" onclick="reloadData()">Atualizar</button>
+  </div>
+</div>
+
+<!-- LOADER -->
+<div id="loader">
+  <div class="loader-ring"></div>
+  <div id="loader-msg" style="color:var(--t3);font-family:var(--mono);font-size:12px">buscando dados...</div>
+</div>
+
+<!-- ERROR -->
+<div id="error-box">
+  <h2>Não foi possível carregar os dados</h2>
+  <p>O sistema tentou carregar automaticamente mas falhou.<br><br>
+  <strong style="color:var(--t1)">Solução:</strong> Clique em <strong style="color:var(--y)">⚙ URL</strong> na barra superior, cole o link do JSON gerado pelo Progestor e clique em Salvar.</p>
+  <div style="display:flex;gap:8px;justify-content:center;margin-top:1rem">
+    <button class="btn" onclick="openUrlModal()">⚙ Configurar URL</button>
+    <button class="btn-ghost" onclick="reloadData()">↻ Tentar novamente</button>
+  </div>
+</div>
+
+<!-- MODAL URL -->
+<div id="modal-url" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="modal-title">Fonte de dados</div>
+    <div class="modal-desc">Cole o link do JSON gerado pelo Progestor. Salvo automaticamente no navegador.</div>
+    <input type="text" id="urlInput" class="modal-input" placeholder="https://novo.progestor21.com.br/sistema/_lib/tmp/...">
+    <div class="modal-actions">
+      <button class="btn" onclick="saveUrl()" style="flex:1">Salvar e carregar</button>
+      <button class="btn-ghost" onclick="closeUrlModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM NAV MOBILE -->
+<nav class="mob-nav" id="mob-nav">
+  <div class="mob-nav-inner">
+    <button class="mob-nav-btn on" onclick="switchTab('visao',this);closeMobDrawer()" id="mob-visao">
+      <span class="mob-icon">◈</span>Visão
+    </button>
+    <button class="mob-nav-btn" onclick="switchTab('corretores',this);closeMobDrawer()" id="mob-corretores">
+      <span class="mob-icon">◎</span>Corretores
+    </button>
+    <button class="mob-nav-btn" onclick="switchTab('filial',this);closeMobDrawer()" id="mob-filial">
+      <span class="mob-icon">◉</span>Filial
+    </button>
+    <button class="mob-nav-btn" onclick="switchTab('tabela',this);closeMobDrawer()" id="mob-tabela">
+      <span class="mob-icon">≡</span>Contratos
+    </button>
+  </div>
+</nav>
+
+<!-- BOTÃO FILTROS FLUTUANTE -->
+<button class="mob-filter-btn" id="mob-filter-btn" onclick="openMobDrawer()">⚙</button>
+
+<!-- GAVETA DE FILTROS -->
+<div class="mob-drawer-overlay" id="mob-overlay" onclick="closeMobDrawer()"></div>
+<div class="mob-drawer" id="mob-drawer">
+  <div class="mob-drawer-handle"></div>
+
+  <!-- SEÇÃO: FILTROS GERAIS -->
+  <div id="mob-drawer-content">
+    <div class="mob-drawer-title">Filtros</div>
+    <div class="mob-drawer-grid">
+      <div class="fgroup">
+        <label style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em">Mês</label>
+        <select onchange="$('fMes').value=this.value;applyFilter()" id="mob-fMes"><option value="">Todos</option></select>
+      </div>
+      <div class="fgroup">
+        <label style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em">Tipo</label>
+        <select onchange="$('fTipo').value=this.value;applyFilter()" id="mob-fTipo"><option value="">Todos</option></select>
+      </div>
+      <div class="fgroup">
+        <label style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em">Banco</label>
+        <select onchange="$('fBco').value=this.value;applyFilter()" id="mob-fBco"><option value="">Todos</option></select>
+      </div>
+      <div class="fgroup">
+        <label style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em">Parceiro</label>
+        <select onchange="$('fParc').value=this.value;applyFilter()" id="mob-fParc"><option value="">Todos</option></select>
+      </div>
+      <div class="fgroup full">
+        <label style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em">Busca</label>
+        <input type="text" id="mob-srch" placeholder="Nome, contrato ou CPF..." oninput="$('srch').value=this.value;applyFilter()" style="font-size:13px">
+      </div>
+      <div class="fgroup full" style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn" onclick="closeMobDrawer()" style="flex:1;height:40px;font-size:13px">Aplicar</button>
+        <button class="btn-ghost" onclick="clearFilters();syncMobFilters()" style="height:40px;font-size:13px">Limpar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEÇÃO: FILIAL TV -->
+  <div id="mob-filial-controls" style="display:none">
+    <div class="mob-drawer-title">Painel da Filial</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <label style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:6px">Filial</label>
+        <select id="mob-tvFil" onchange="TV_FIL=this.value" style="width:100%;height:44px;font-size:14px;background:#232326;border:1px solid rgba(255,255,255,.15);color:#fafafa;border-radius:8px;padding:0 12px;outline:none">
+          <option value="">— escolha uma filial —</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:6px">Período</label>
+        <select id="mob-tvPeriodo" onchange="TV_PERIODO=this.value" style="width:100%;height:44px;font-size:14px;background:#232326;border:1px solid rgba(255,255,255,.15);color:#fafafa;border-radius:8px;padding:0 12px;outline:none">
+          <option value="mes">Mês atual</option>
+          <option value="30">Últimos 30 dias</option>
+          <option value="7">Últimos 7 dias</option>
+          <option value="hoje">Hoje</option>
+        </select>
+      </div>
+      <button class="btn" onclick="mobAplicarFilial()" style="height:44px;font-size:14px;width:100%">Ver painel</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- APP -->
+<div id="app">
+<div class="page">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <button class="nav-item on" onclick="switchTab('visao',this)" id="nav-visao">
+        <span class="nav-icon">◈</span> Visão Geral
+      </button>
+      <button class="nav-item" onclick="switchTab('corretores',this)" id="nav-corretores">
+        <span class="nav-icon">◎</span> Corretores
+      </button>
+      <button class="nav-item" onclick="switchTab('filial',this)" id="nav-filial">
+        <span class="nav-icon">◉</span> Filial
+      </button>
+      <button class="nav-item" onclick="switchTab('tabela',this)" id="nav-tabela">
+        <span class="nav-icon">≡</span> Contratos
+      </button>
+    </div>
+
+    <div class="sidebar-label">Filtros rápidos</div>
+    <div class="sidebar-section">
+      <div style="display:flex;flex-direction:column;gap:6px;padding:0 4px">
+
+        <!-- MÊS select -->
+        <div class="fgroup">
+          <label class="sb-filter-label">Mês</label>
+          <select id="fMes" class="sb-select"><option value="">Todos</option></select>
+        </div>
+
+        <!-- FILIAL dropdown multi -->
+        <div class="fgroup">
+          <label class="sb-filter-label">Filial</label>
+          <div class="sb-drop-wrap" id="fFil-wrap">
+            <button class="sb-drop-btn" id="fFil-btn" onclick="toggleDrop('fFil',event)">
+              <span id="fFil-label">Todas</span>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="sb-drop-panel" id="fFil-panel"></div>
+            <select id="fFil" multiple style="display:none"></select>
+          </div>
+        </div>
+
+        <!-- CANAL dropdown simples -->
+        <div class="fgroup">
+          <label class="sb-filter-label">Canal de venda</label>
+          <select id="fCanal" class="sb-select"><option value="">Todos</option></select>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CONTROLES FILIAL TV — aparece só quando tab filial está ativa -->
+    <div id="sb-filial-controls" style="display:none">
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-label">Painel da filial</div>
+      <div class="sidebar-section">
+        <div style="display:flex;flex-direction:column;gap:8px;padding:0 4px">
+          <div class="fgroup">
+            <label class="sb-filter-label">Filial</label>
+            <select id="tvFil" class="sb-select" onchange="onTvFilChange()"><option value="">— escolha —</option></select>
+          </div>
+          <div id="tv-periodo-wrap" style="display:none" class="fgroup">
+            <label class="sb-filter-label">Período</label>
+            <select id="tvPeriodo" class="sb-select" onchange="renderTv()">
+              <option value="mes">Mês atual</option>
+              <option value="30">Últimos 30 dias</option>
+              <option value="7">Últimos 7 dias</option>
+              <option value="hoje">Hoje</option>
+            </select>
+          </div>
+          <button id="tv-fullscreen-btn" onclick="openTvMode()" style="display:none;background:rgba(247,203,69,.12);border:1px solid rgba(247,203,69,.3);color:var(--y);font-family:var(--font);font-size:11px;padding:7px 12px;border-radius:var(--r);cursor:pointer;transition:all .15s;font-weight:600">
+            ⛶ Tela cheia
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-stat">
+        <div class="sidebar-stat-label">Registros carregados</div>
+        <div class="sidebar-stat-val" id="sidebar-total">—</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- FILTROS PRINCIPAIS -->
+    <div class="filter-bar">
+      <div class="fgroup">
+        <label>De</label>
+        <input type="date" id="fDe" onchange="applyFilter()">
+      </div>
+      <div class="fgroup">
+        <label>Até</label>
+        <input type="date" id="fAte" onchange="applyFilter()">
+      </div>
+      <div class="fdiv"></div>
+      <div class="fgroup">
+        <label>Tipo</label>
+        <select id="fTipo"><option value="">Todos</option></select>
+      </div>
+      <div class="fgroup">
+        <label>Banco</label>
+        <select id="fBco"><option value="">Todos</option></select>
+      </div>
+      <div class="fgroup">
+        <label>Parceiro</label>
+        <select id="fParc"><option value="">Todos</option></select>
+      </div>
+      <div class="fdiv"></div>
+      <div class="fgroup">
+        <label>Busca</label>
+        <input type="text" id="srch" placeholder="Nome, contrato ou CPF...">
+      </div>
+      <div class="actions">
+        <button class="btn-ghost" onclick="clearFilters()">Limpar</button>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-header"><span class="kpi-label">Contratos</span><div class="kpi-icon-wrap">📋</div></div>
+        <div class="kpi-val" id="kTot">—</div>
+        <div class="kpi-sub" id="kTotS">—</div>
+        <div class="kpi-bar"></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-header"><span class="kpi-label">Valor liberado</span><div class="kpi-icon-wrap">💰</div></div>
+        <div class="kpi-val" id="kVal">—</div>
+        <div class="kpi-sub" id="kValS">—</div>
+        <div class="kpi-bar"></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-header"><span class="kpi-label">Comissão loja</span><div class="kpi-icon-wrap">🏦</div></div>
+        <div class="kpi-val" id="kCom">—</div>
+        <div class="kpi-sub" id="kComS">—</div>
+        <div class="kpi-bar"></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-header"><span class="kpi-label">Líquido loja</span><div class="kpi-icon-wrap">✅</div></div>
+        <div class="kpi-val" id="kLiq">—</div>
+        <div class="kpi-sub" id="kLiqS">—</div>
+        <div class="kpi-bar"></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-header"><span class="kpi-label">Ticket comissão</span><div class="kpi-icon-wrap">🎯</div></div>
+        <div class="kpi-val" id="kTick">—</div>
+        <div class="kpi-sub" id="kTickS">—</div>
+        <div class="kpi-bar"></div>
+      </div>
+    </div>
+
+  <!-- VISÃO GERAL -->
+  <div id="p-visao" class="panel on">
+    <div style="text-align:right; margin-bottom:12px;">
+      <div style="display:inline-flex; background:var(--s1); padding:4px; border-radius:var(--r); border:1px solid var(--b1); gap:4px; flex-wrap:wrap">
+        <button id="btnMetricVal" class="btn" onclick="setMetric('val')">Valor Liberado</button>
+        <button id="btnMetricLiq" class="btn-ghost" style="border:none" onclick="setMetric('liq')">Líquido Loja</button>
+      </div>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-box"><div class="chart-title">Valor por tipo de operação</div><div class="chart-sub">distribuição por modalidade</div><div class="chart-wrap"><canvas id="cTipo"></canvas></div><div class="legend" id="lgTipo"></div></div>
+      <div class="chart-box"><div class="chart-title">Valor por banco</div><div class="chart-sub">produção por instituição</div><div class="chart-wrap"><canvas id="cBco"></canvas></div><div class="legend" id="lgBco"></div></div>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-box"><div class="chart-title">Contratos por mês</div><div class="chart-sub">evolução temporal</div><div class="chart-wrap"><canvas id="cMes"></canvas></div></div>
+      <div class="chart-box"><div class="chart-title">Valor por parceiro</div><div class="chart-sub">distribuição por parceiro</div><div class="chart-wrap"><canvas id="cParc"></canvas></div><div class="legend" id="lgParc"></div></div>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-box"><div class="chart-title">Valor por filial</div><div class="chart-sub">produção por unidade</div><div class="chart-wrap"><canvas id="cFil"></canvas></div><div class="legend" id="lgFil"></div></div>
+      <div class="chart-box"><div class="chart-title">Canal de venda</div><div class="chart-sub">origem dos contratos</div><div class="chart-wrap"><canvas id="cCanal"></canvas></div><div class="legend" id="lgCanal"></div></div>
+    </div>
+  </div>
+
+  <!-- CORRETORES -->
+  <div id="p-corretores" class="panel">
+    <div class="table-wrap">
+      <div class="table-head"><div class="table-head-left"><span class="table-head-title">Ranking de corretores</span></div></div>
+      <div class="table-scroll">
+        <table><thead><tr><th>#</th><th>Corretor</th><th>Contratos</th><th>Valor Liberado</th><th>Comissão</th><th>Desconto</th><th>Líquido</th><th>Ticket Médio</th></tr></thead>
+        <tbody id="tbCorr"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABELA -->
+  <div id="p-tabela" class="panel">
+    <div class="table-wrap">
+      <div class="table-head">
+        <div class="table-head-left">
+          <span class="table-head-title">Lista de contratos</span>
+          <span class="table-head-count" id="tblCount">—</span>
+        </div>
+        <button class="pag-btn" id="bVerTudo" onclick="toggleVerTudo()">Ver tudo</button>
+      </div>
+      <div class="table-scroll">
+        <table><thead><tr>
+          <th>Nome</th><th>CPF</th><th>Contrato</th><th>Banco</th><th>Tipo</th><th>Produto</th>
+          <th>Parcelas</th><th>Valor Liberado</th>
+          <th>Com.%</th><th>Com. R$</th><th>Líquido R$</th>
+          <th>Liberação</th><th>Dt.Comissão</th><th>St.Comissão</th>
+          <th>Canal</th><th>Parceiro</th><th>Corretor</th><th>Filial</th>
+        </tr></thead>
+        <tbody id="tbContr"></tbody></table>
+      </div>
+      <div class="pag-bar" id="pagBar">
+        <span id="pInfo" style="font-family:var(--mono)">—</span>
+        <div class="pag-btns">
+          <button class="pag-btn" id="bPrev" onclick="changePage(-1)">← Anterior</button>
+          <button class="pag-btn" id="bNext" onclick="changePage(1)">Próxima →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- PAINEL FILIAL TV -->
+  <div id="p-filial" class="panel">
+    <div id="tv-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:1rem;color:var(--t3)">
+      <span style="font-size:3rem;opacity:.3">◉</span>
+      <span style="font-family:var(--mono);font-size:12px" id="tv-empty-msg">Selecione uma filial</span>
+      <button onclick="openMobDrawer()" style="display:none;background:var(--y);border:none;color:#000;font-family:var(--font);font-size:12px;font-weight:600;padding:0 16px;height:36px;border-radius:var(--r);cursor:pointer" id="tv-empty-btn">Escolher filial</button>
+    </div>
+    <div id="tv-content"></div>
+  </div>
+
+  </main>
+</div>
+</div>
+
+<!-- MODAL TV FULLSCREEN -->
+<div id="tv-modal" style="display:none;position:fixed;inset:0;z-index:500;background:var(--bg);overflow-y:auto">
+  <div id="tv-inner" style="min-height:100vh;padding:0"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
