@@ -181,7 +181,6 @@ function initData(data) {
   buildFilters();
   buildTvFilSelect();
   rebuildMobFilters();
-  if(TV_FILS.length) { checkNewContracts(); }
   // CSS cuida do show/hide via media queries — não forçar via JS para evitar conflito
   applyFilter();
   startAutoRefresh();
@@ -1269,7 +1268,7 @@ let globalAlertTimer = null;
 function startGlobalAlertTimer(){
   clearInterval(globalAlertTimer);
   globalAlertTimer = setInterval(async () => {
-    if(!TV_FILS.length) return; // sem filiais selecionadas, nada a fazer
+    if(!TV_FILS.length) return;
     try {
       const manualUrl = localStorage.getItem('progestor_json_url');
       const endpoint = manualUrl
@@ -1284,11 +1283,10 @@ function startGlobalAlertTimer(){
         'Bonus1':parseFloat(r['R$ Bonus Loja 1']||0),
         'Bonus2':parseFloat(r['R$ Bonus Loja 2']||0)
       }));
-      // Detectar novos contratos nas filiais selecionadas
-      const isFilialTab = getActiveTab() === 'filial';
+
+      // Checar novos contratos ANTES de atualizar ALL
       TV_FILS.forEach(cod => {
-        const rows = getRowsForFilial(newAll, cod);
-        rows.forEach(r => {
+        getRowsForFilial(newAll, cod).forEach(r => {
           const id = getContractId(r);
           if(!TV_KNOWN_IDS.has(id)){
             TV_KNOWN_IDS.add(id);
@@ -1296,11 +1294,18 @@ function startGlobalAlertTimer(){
           }
         });
       });
-      // Atualizar ALL e re-renderizar apenas se estiver na aba filial
+
+      // Atualizar dados globais
       ALL = newAll;
-      if(isFilialTab) renderTv();
+      $('status-txt').textContent = ALL.length + ' registros';
+      $('ts').textContent = 'atualizado ' + new Date().toLocaleTimeString('pt-BR');
+
+      // Re-renderizar conforme aba ativa
+      const tab = getActiveTab();
+      if(tab === 'filial') renderTv();
       else { buildFilters(); applyFilter(); }
-    } catch(e){ /* silencioso */ }
+
+    } catch(e){ console.warn('globalAlertTimer erro:', e.message); }
   }, 60000);
 }
 
