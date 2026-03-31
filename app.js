@@ -772,6 +772,7 @@ function onTvFilsChange(){
   const empty = $('tv-empty');
   if(!hasFils){
     stopTvRotation();
+    stopGlobalAlertTimer();
     if(empty) empty.style.display = 'flex';
     const tc = $('tv-content'); if(tc) tc.innerHTML = '';
     return;
@@ -785,6 +786,8 @@ function onTvFilsChange(){
   renderTv();
   if(TV_FILS.length > 1) startTvRotation();
   else stopTvRotation();
+  // Iniciar timer global de alertas (funciona em qualquer aba)
+  startGlobalAlertTimer();
 }
 
 function onTvFilChange(){ onTvFilsChange(); }
@@ -1259,5 +1262,70 @@ function rebuildMobFilters(){
   });
 }
 
+// ── DETECÇÃO GLOBAL DE NOVOS CONTRATOS ───────────────────────
+// Roda a cada 60s independente da aba ativa
+let globalAlertTimer = null;
+
+function startGlobalAlertTimer(){
+  clearInterval(globalAlertTimer);
+  globalAlertTimer = setInterval(async () => {
+    if(!TV_FILS.length) return; // sem filiais selecionadas, nada a fazer
+    try {
+      const manualUrl = localStorage.getItem('progestor_json_url');
+      const endpoint = manualUrl
+        ? 'proxy.php?url=' + encodeURIComponent(manualUrl)
+        : 'trigger.php?_t=' + Date.now();
+      const data = await fetchJSON(endpoint, manualUrl ? 10000 : 20000);
+      const newAll = data.map(r=>({...r,
+        'Valor Liberado':parseFloat(r['Valor Liberado']||0),
+        'Base Comissao':parseFloat(r['Base Comissao']||0),
+        'Comissao Loja':parseFloat(r['Comissao Loja']||0),
+        'Desconto Loja':parseFloat(r['Desconto Loja']||0),
+        'Bonus1':parseFloat(r['R$ Bonus Loja 1']||0),
+        'Bonus2':parseFloat(r['R$ Bonus Loja 2']||0)
+      }));
+      // Detectar novos contratos nas filiais selecionadas
+      const isFilialTab = getActiveTab() === 'filial';
+      TV_FILS.forEach(cod => {
+        const rows = getRowsForFilial(newAll, cod);
+        rows.forEach(r => {
+          const id = getContractId(r);
+          if(!TV_KNOWN_IDS.has(id)){
+            TV_KNOWN_IDS.add(id);
+            showToast(r, FILIAIS[cod] || cod);
+          }
+        });
+      });
+      // Atualizar ALL e re-renderizar apenas se estiver na aba filial
+      ALL = newAll;
+      if(isFilialTab) renderTv();
+      else { buildFilters(); applyFilter(); }
+    } catch(e){ /* silencioso */ }
+  }, 60000);
+}
+
+function stopGlobalAlertTimer(){
+  clearInterval(globalAlertTimer);
+}
+
+// Filtrar rows por filial + período (versão que aceita array externo)
+function getRowsForFilial(dataArr, cod){
+  const now = new Date();
+  let rows = dataArr.filter(r => String(r.Filial) === cod);
+  if(TV_PERIODO === 'mes'){
+    const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    rows = rows.filter(r => getMes(r['Data da Liberação']) === ym || getMes(r['Data Comissao Loja']) === ym);
+  } else if(TV_PERIODO === 'hoje'){
+    const hoje = now.toISOString().slice(0,10);
+    rows = rows.filter(r => (r['Data da Liberação']||'').slice(0,10) === hoje);
+  } else {
+    const dias = parseInt(TV_PERIODO);
+    const limite = new Date(now - dias*86400000).toISOString().slice(0,10);
+    rows = rows.filter(r => (r['Data da Liberação']||'') >= limite);
+  }
+  return rows;
+}
+
 // ── START ─────────────────────────────────────────────────────
 loadData();
+</script>
