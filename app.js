@@ -1328,4 +1328,3 @@ function getRowsForFilial(dataArr, cod){
 
 // ── START ─────────────────────────────────────────────────────
 loadData();
-</script>
