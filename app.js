@@ -701,13 +701,16 @@ async function autoRefresh(){
 }
 
 // ── MODO TV FILIAL ───────────────────────────────────────────
-let TV_FIL = '',          // filial atualmente exibida
-    TV_FILS = [],         // lista de filiais selecionadas para rotação
-    TV_FIL_IDX = 0,       // índice atual na rotação
+let TV_FIL = '',
+    TV_FILS = [],
+    TV_FIL_IDX = 0,
     TV_PERIODO = 'mes',
-    TV_INTERVAL = 30,     // segundos entre alternâncias
-    TV_ALERT = true,      // alertas sonoros ativos
-    TV_KNOWN_IDS = new Set(), // IDs de contratos já conhecidos para detecção de novos
+    TV_INTERVAL = 30,
+    TV_ALERT_SOUND = true,   // toggle de som
+    TV_SNAPSHOTS = {},       // { "cod|periodo": { rowKey: rowSig } }
+    TV_ALERT = null,         // alerta ativo { novo, alterado, total, changedNames, until }
+    TV_BANNER_UNTIL = 0,
+    TV_BANNER_TIMER = null,
     tvClockTimer = null,
     tvRefreshTimer = null,
     tvRotateTimer = null;
@@ -811,26 +814,69 @@ function getTvData(filCod){
 }
 
 // IDs únicos de cada contrato para detecção de novos
-function getContractId(r){ return (r.Contrato||'') + '|' + (r.CPF||'') + '|' + (r['Data da Liberação']||''); }
+// ── DETECÇÃO DE MUDANÇAS POR SNAPSHOT ────────────────────────
+function getTvRowKey(r){ return (r.Contrato||'') + '|' + (r.CPF||''); }
+function getTvRowSig(r){ return val(r) + '|' + comTotal(r) + '|' + (r['Status Comissao Loja']||'') + '|' + (r['Data Comissao Loja']||''); }
 
-function initKnownIds(){
-  TV_KNOWN_IDS = new Set();
-  TV_FILS.forEach(cod => {
-    getTvData(cod).forEach(r => TV_KNOWN_IDS.add(getContractId(r)));
+function detectTvChanges(rows, cod){
+  const key = cod + '|' + TV_PERIODO;
+  const prev = TV_SNAPSHOTS[key];
+  const cur = {};
+  rows.forEach(r => { cur[getTvRowKey(r)] = getTvRowSig(r); });
+  TV_SNAPSHOTS[key] = cur;
+  if(!prev) return { novo:0, alterado:0, changedKeys:{} };
+  let novo = 0, alterado = 0;
+  const changedKeys = {};
+  Object.keys(cur).forEach(k => {
+    if(!(k in prev)){ novo++; changedKeys[k]='novo'; }
+    else if(prev[k] !== cur[k]){ alterado++; changedKeys[k]='alt'; }
   });
+  return { novo, alterado, changedKeys };
 }
 
-function checkNewContracts(){
-  if(!TV_FILS.length) return;
+function initKnownIds(){
+  // Inicializa snapshots sem disparar alertas
+  TV_SNAPSHOTS = {};
   TV_FILS.forEach(cod => {
-    getTvData(cod).forEach(r => {
-      const id = getContractId(r);
-      if(!TV_KNOWN_IDS.has(id)){
-        TV_KNOWN_IDS.add(id);
-        showToast(r, FILIAIS[cod] || cod);
-      }
-    });
+    const rows = getTvData(cod);
+    const key = cod + '|' + TV_PERIODO;
+    const snap = {};
+    rows.forEach(r => { snap[getTvRowKey(r)] = getTvRowSig(r); });
+    TV_SNAPSHOTS[key] = snap;
   });
+  TV_ALERT = null;
+  TV_BANNER_UNTIL = 0;
+}
+
+function checkAndNotify(newAll){
+  if(!TV_FILS.length) return;
+  let totalNovo = 0, totalAlt = 0;
+  const allChangedNames = [];
+
+  TV_FILS.forEach(cod => {
+    const rows = getRowsForFilial(newAll, cod);
+    const diff = detectTvChanges(rows, cod);
+    totalNovo += diff.novo;
+    totalAlt += diff.alterado;
+    if(diff.novo + diff.alterado > 0){
+      rows.filter(r => !!diff.changedKeys[getTvRowKey(r)])
+          .forEach(r => { const n=(r.Nome||'').trim(); if(n) allChangedNames.push(n); });
+    }
+  });
+
+  const total = totalNovo + totalAlt;
+  if(total === 0) return;
+
+  const uniqueNames = [...new Set(allChangedNames)];
+  const nowMs = Date.now();
+  TV_ALERT = { novo:totalNovo, alterado:totalAlt, total, changedNames:uniqueNames, until:nowMs+15000 };
+  TV_BANNER_UNTIL = nowMs + 10000;
+  clearTimeout(TV_BANNER_TIMER);
+  TV_BANNER_TIMER = setTimeout(() => { if(Date.now() >= TV_BANNER_UNTIL) renderTv(); }, 10100);
+
+  const toggle = $('tvAlertToggle');
+  if(!toggle || toggle.checked) playTvAlertSound(total);
+  showToastAlert(TV_ALERT);
 }
 
 function getPeriodoLabel(){
@@ -848,6 +894,24 @@ function renderTv(){
 
   const rows = getTvData();
   const filNome = FILIAIS[TV_FIL] || TV_FIL;
+
+  // Detectar mudanças na filial atual e disparar alerta
+  const diff = detectTvChanges(rows, TV_FIL);
+  if((diff.novo + diff.alterado) > 0){
+    const toggle = $('tvAlertToggle');
+    if(!toggle || toggle.checked) playTvAlertSound(diff.novo + diff.alterado);
+    const alert = {
+      novo: diff.novo, alterado: diff.alterado,
+      total: diff.novo + diff.alterado,
+      changedNames: rows.filter(r=>!!diff.changedKeys[getTvRowKey(r)])
+                        .map(r=>(r.Nome||'').trim()).filter(Boolean)
+    };
+    TV_ALERT = {...alert, filNome, until: Date.now()+15000};
+    TV_BANNER_UNTIL = Date.now() + 10000;
+    clearTimeout(TV_BANNER_TIMER);
+    TV_BANNER_TIMER = setTimeout(()=>{ if(Date.now()>=TV_BANNER_UNTIL) renderTv(); }, 10100);
+    showToastAlert(alert);
+  }
 
   // KPIs
   const nContratos = rows.length;
@@ -874,8 +938,41 @@ function renderTv(){
   const medals = ['🥇','🥈','🥉'];
   const medalClass = ['gold','silver','bronze'];
 
+  // Detectar mudanças e disparar alerta
+  const diff = detectTvChanges(rows, TV_FIL);
+  if(diff.novo + diff.alterado > 0){
+    const nowMs = Date.now();
+    const changedNames = rows
+      .filter(r => !!diff.changedKeys[getTvRowKey(r)])
+      .map(r => (r.Nome||'').trim()).filter(Boolean);
+    TV_ALERT = { novo:diff.novo, alterado:diff.alterado, total:diff.novo+diff.alterado,
+                 changedNames:[...new Set(changedNames)], until:nowMs+15000 };
+    TV_BANNER_UNTIL = nowMs + 10000;
+    clearTimeout(TV_BANNER_TIMER);
+    TV_BANNER_TIMER = setTimeout(()=>{ if(Date.now()>=TV_BANNER_UNTIL) renderTv(); }, 10100);
+    playTvAlertSound(TV_ALERT.total);
+    showToastAlert(TV_ALERT);
+  }
+
+  const showBanner = TV_ALERT && Date.now() < TV_BANNER_UNTIL;
+  const bannerHtml = !showBanner ? '' : (() => {
+    const extra = TV_ALERT.changedNames.length > 3 ? ' · +' + (TV_ALERT.changedNames.length - 3) : '';
+    const names = TV_ALERT.changedNames.slice(0,3).join(' · ') + extra;
+    return \`<div class="tv-center-banner">
+      <div class="tv-center-banner-tag">&#x1F514; ATUALIZAÇÃO DETECTADA</div>
+      <div class="tv-center-banner-main">\${TV_ALERT.total} contrato\${TV_ALERT.total>1?'s':''} atualizado\${TV_ALERT.total>1?'s':''}</div>
+      <div class="tv-center-banner-row">
+        <span class="tv-banner-badge novo">\${TV_ALERT.novo} novo\${TV_ALERT.novo!==1?'s':''}</span>
+        <span class="tv-banner-badge alt">\${TV_ALERT.alterado} alterado\${TV_ALERT.alterado!==1?'s':''}</span>
+        <span class="tv-banner-time">\${new Date().toLocaleTimeString('pt-BR')}</span>
+      </div>
+      \${names ? \`<div class="tv-center-banner-names">\${names}</div>\` : ''}
+    </div>\`;
+  })();
+
   const html = `
   <div class="tv-wrap">
+    \${bannerHtml}
     <div class="tv-header">
       <div class="tv-brand">
         <div class="tv-brand-logo">LF</div>
@@ -908,6 +1005,22 @@ function renderTv(){
         </div>
       </div>
     </div>
+
+    ${TV_ALERT && Date.now() < TV_BANNER_UNTIL ? `
+    <div class="tv-alert-banner">
+      <div class="tv-alert-banner-inner">
+        <div class="tv-alert-icon">⚡</div>
+        <div class="tv-alert-content">
+          <div class="tv-alert-title">ATUALIZAÇÃO DETECTADA</div>
+          <div class="tv-alert-main">
+            ${TV_ALERT.total} atualização${TV_ALERT.total>1?'ões':''} · ${TV_ALERT.filNome||filNome}
+            <span class="tv-alert-badge">${TV_ALERT.novo>0?TV_ALERT.novo+' novo'+( TV_ALERT.novo!==1?'s':''):''} ${TV_ALERT.alterado>0?'· '+TV_ALERT.alterado+' alterado'+(TV_ALERT.alterado!==1?'s':''):''}</span>
+          </div>
+          ${TV_ALERT.changedNames.length ? `<div class="tv-alert-names">${TV_ALERT.changedNames.slice(0,4).join(' · ')}${TV_ALERT.changedNames.length>4?' · +more':''}</div>` : ''}
+        </div>
+        <div class="tv-alert-time">${new Date().toLocaleTimeString('pt-BR')}</div>
+      </div>
+    </div>` : ''}
 
     <div class="tv-body">
       <!-- KPIs -->
@@ -1064,53 +1177,73 @@ function nextTvFilial(){
   renderTv();
 }
 
-// ── TOAST NOTIFICAÇÕES ────────────────────────────────────────
-// Som de notificação via Web Audio API (sem arquivo externo)
-function playAlertSound(){
-  if(!TV_ALERT) return;
+// ── SOM + NOTIFICAÇÕES ───────────────────────────────────────
+function playTvAlertSound(count){
+  if(!TV_ALERT_SOUND) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if(!AC) return;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const times = [0, 0.15, 0.3];
-    times.forEach(t => {
-      const osc = ctx.createOscillator();
+    const ctx = new AC();
+    const t0 = ctx.currentTime;
+    const tones = count > 3 ? [1046,1318,1046,1567]
+                : count > 1 ? [988,1318,988]
+                :              [1046,1318];
+    tones.forEach((freq, i) => {
+      const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime + t);
-      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + t + 0.1);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.15);
-      osc.start(ctx.currentTime + t);
-      osc.stop(ctx.currentTime + t + 0.2);
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t0 + i*0.16);
+      gain.gain.exponentialRampToValueAtTime(0.55, t0 + i*0.16 + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + i*0.16 + 0.14);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(t0 + i*0.16);
+      osc.stop(t0 + i*0.16 + 0.16);
     });
-  } catch(e){}
+    setTimeout(() => ctx.close(), 1500);
+  } catch(e){ console.warn('som bloqueado:', e.message); }
 }
 
-function showToast(r, filialNome){
-  playAlertSound();
+// Toast simples para um contrato individual (mantido para compatibilidade)
+function showToast(r, filNome){
   const container = $('toast-container');
   if(!container) return;
-
   const toast = document.createElement('div');
   toast.className = 'toast';
   toast.innerHTML = `
     <div class="toast-icon">📋</div>
     <div class="toast-body">
-      <div class="toast-title">${r.Nome || '—'}</div>
+      <div class="toast-title">${r.Nome||'—'}</div>
       <div class="toast-val">${fmt(val(r))}</div>
       <div class="toast-sub">${(r.Tipo||'—').trim()} · ${r.BCO||'—'}</div>
-      <div class="toast-filial">◉ ${filialNome}</div>
+      <div class="toast-filial">◉ ${filNome}</div>
     </div>
-    <button class="toast-close" onclick="this.closest('.toast').remove()">✕</button>
-  `;
-
+    <button class="toast-close" onclick="this.closest('.toast').remove()">✕</button>`;
   container.appendChild(toast);
+  setTimeout(()=>{ toast.classList.add('hide'); setTimeout(()=>toast.remove(),350); }, 7000);
+}
 
-  // Auto-remover após 6s
-  setTimeout(()=>{
-    toast.classList.add('hide');
-    setTimeout(()=>toast.remove(), 350);
-  }, 6000);
+// Toast de alerta com resumo de mudanças
+function showToastAlert(alert){
+  const container = $('toast-container');
+  if(!container) return;
+  // Remover toasts de alerta anteriores
+  container.querySelectorAll('.toast-alert').forEach(t=>t.remove());
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-alert';
+  const names = (alert.changedNames||[]).slice(0,3).join(', ')
+              + ((alert.changedNames||[]).length>3 ? ` +${alert.changedNames.length-3}` : '');
+  toast.innerHTML = `
+    <div class="toast-icon">🔔</div>
+    <div class="toast-body">
+      <div class="toast-title" style="color:var(--y)">ATUALIZAÇÃO DETECTADA</div>
+      <div class="toast-val">${alert.total} contrato${alert.total>1?'s':''}</div>
+      <div class="toast-sub">${alert.novo} novo${alert.novo!==1?'s':''} · ${alert.alterado} alterado${alert.alterado!==1?'s':''}</div>
+      ${names ? `<div class="toast-filial">${names}</div>` : ''}
+    </div>
+    <button class="toast-close" onclick="this.closest('.toast').remove()">✕</button>`;
+  container.appendChild(toast);
+  setTimeout(()=>{ toast.classList.add('hide'); setTimeout(()=>toast.remove(),350); }, 10000);
 }
 
 function openTvMode(){
@@ -1284,16 +1417,8 @@ function startGlobalAlertTimer(){
         'Bonus2':parseFloat(r['R$ Bonus Loja 2']||0)
       }));
 
-      // Checar novos contratos ANTES de atualizar ALL
-      TV_FILS.forEach(cod => {
-        getRowsForFilial(newAll, cod).forEach(r => {
-          const id = getContractId(r);
-          if(!TV_KNOWN_IDS.has(id)){
-            TV_KNOWN_IDS.add(id);
-            showToast(r, FILIAIS[cod] || cod);
-          }
-        });
-      });
+      // Checar mudanças ANTES de atualizar ALL
+      checkAndNotify(newAll);
 
       // Atualizar dados globais
       ALL = newAll;
