@@ -119,53 +119,70 @@ const fmtData=d=>d?d.split('-').reverse().join('/'):'—';
 
 // ── CARGA AUTOMÁTICA ──────────────────────────────────────────
 async function loadData() {
-  show('loader'); hide('app'); hide('error-box');
-  $('status-txt').textContent = 'carregando';
-
-  const manualUrl = localStorage.getItem('progestor_json_url');
-
-  // 1. URL manual salva → proxy.php
-  if (manualUrl) {
-    $('loader-msg').textContent = 'carregando via URL manual...';
-    try {
-      const data = await fetchJSON('proxy.php?url=' + encodeURIComponent(manualUrl));
-      initData(data); return;
-    } catch(e) {
-      console.warn('proxy.php falhou:', e.message);
-    }
-
-    // 2. Tenta direto (sem proxy) — funciona se CORS liberado
-    $('loader-msg').textContent = 'tentando acesso direto...';
-    try {
-      const data = await fetchJSON(manualUrl, 15000);
-      initData(data); return;
-    } catch(e) {
-      console.warn('direto falhou:', e.message);
-    }
-  }
-
-  // 3. trigger.php (com timeout curto — se demorar é porque falhou)
-  $('loader-msg').textContent = 'buscando dados automáticos...';
   try {
-    const data = await fetchJSON('trigger.php?_t=' + Date.now(), 20000);
-    initData(data); return;
-  } catch(e) {
-    console.warn('trigger.php falhou:', e.message);
-  }
+    show('loader'); hide('app'); hide('error-box');
+    if ($('status-txt')) $('status-txt').textContent = 'carregando';
 
-  // 4. Nenhum funcionou — mostra erro com instrução clara
-  hide('loader');
-  show('error-box');
-  $('status-txt').textContent = 'erro';
+    const manualUrl = localStorage.getItem('progestor_json_url');
+
+    // 1. URL manual salva → proxy.php
+    if (manualUrl) {
+      if ($('loader-msg')) $('loader-msg').textContent = 'carregando via URL manual...';
+      try {
+        const data = await fetchJSON('proxy.php?url=' + encodeURIComponent(manualUrl));
+        initData(data); return;
+      } catch(e) {
+        console.warn('proxy.php falhou:', e.message);
+      }
+
+      // 2. Tenta direto (sem proxy) — funciona se CORS liberado
+      if ($('loader-msg')) $('loader-msg').textContent = 'tentando acesso direto...';
+      try {
+        const data = await fetchJSON(manualUrl, 15000);
+        initData(data); return;
+      } catch(e) {
+        console.warn('direto falhou:', e.message);
+      }
+    }
+
+    // 3. trigger.php (com timeout curto — se demorar é porque falhou)
+    if ($('loader-msg')) $('loader-msg').textContent = 'buscando dados automáticos...';
+    try {
+      const data = await fetchJSON('trigger.php?_t=' + Date.now(), 20000);
+      initData(data); return;
+    } catch(e) {
+      console.warn('trigger.php falhou:', e.message);
+    }
+
+    // 4. Nenhum funcionou — mostra erro com instrução clara
+    hide('loader');
+    show('error-box');
+    if ($('status-txt')) $('status-txt').textContent = 'erro';
+  } catch (e) {
+    // Fallback para garantir que o app nunca fique preso no loader.
+    console.error('loadData erro inesperado:', e);
+    hide('loader');
+    show('error-box');
+    if ($('status-txt')) $('status-txt').textContent = 'erro';
+  }
 }
 
 async function fetchJSON(url, timeout=10000) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeout);
-  const res = await fetch(url, {cache:'no-cache', signal:ctrl.signal});
-  clearTimeout(timer);
-  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const fetchPromise = fetch(url, ctrl ? {cache:'no-cache', signal:ctrl.signal} : {cache:'no-cache'});
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => {
+      if (ctrl) ctrl.abort();
+      reject(new Error('timeout'));
+    }, timeout);
+  });
+
+  const res = await Promise.race([fetchPromise, timeoutPromise]);
+  if (!res || !res.ok) throw new Error('HTTP ' + (res ? res.status : 'sem-resposta'));
   const data = await res.json();
+  if (data && typeof data === 'object' && !Array.isArray(data) && data.error) {
+    throw new Error(String(data.error));
+  }
   if (!Array.isArray(data) || !data.length) throw new Error('vazio');
   return data;
 }
@@ -1088,7 +1105,7 @@ function renderTv(){
         </div>
       </div>
     </div>
-  </div>`;
+  </div>;
 
   const empty=$('tv-empty');
   if(empty) empty.style.display='none';
