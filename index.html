@@ -240,10 +240,19 @@
           <div class="fgroup" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0">
             <span style="font-size:11px;color:var(--t2);font-weight:500">🔔 Alertas sonoros</span>
             <label style="position:relative;display:inline-block;width:36px;height:20px;cursor:pointer">
-              <input type="checkbox" id="tvAlertToggle" checked onchange="TV_ALERT_SOUND=this.checked"
+              <input type="checkbox" id="tvAlertToggle" checked onchange="setTvAlertSoundEnabled(this.checked)"
                 style="opacity:0;width:0;height:0;position:absolute">
               <span class="tv-toggle-slider"></span>
             </label>
+          </div>
+
+          <div class="fgroup">
+            <label class="sb-filter-label">Perfil de som</label>
+            <select id="tvAlertProfile" class="sb-select" onchange="setTvSoundProfile(this.value, true)">
+              <option value="padrao">Padrão</option>
+              <option value="alto">Alto e chamativo</option>
+              <option value="sirene">Sirene curta</option>
+            </select>
           </div>
 
           <button id="tv-fullscreen-btn" onclick="openTvMode()" style="display:none;background:rgba(247,203,69,.12);border:1px solid rgba(247,203,69,.3);color:var(--y);font-family:var(--font);font-size:11px;padding:7px 12px;border-radius:var(--r);cursor:pointer;transition:all .15s;font-weight:600">

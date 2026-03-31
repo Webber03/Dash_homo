@@ -724,6 +724,7 @@ let TV_FIL = '',
     TV_PERIODO = 'mes',
     TV_INTERVAL = 30,
     TV_ALERT_SOUND = true,   // toggle de som
+    TV_ALERT_SOUND_PROFILE = 'padrao',
     TV_SNAPSHOTS = {},       // { "cod|periodo": { rowKey: rowSig } }
     TV_ALERT = null,         // alerta ativo { novo, alterado, total, changedNames, until }
     TV_BANNER_UNTIL = 0,
@@ -731,6 +732,60 @@ let TV_FIL = '',
     tvClockTimer = null,
     tvRefreshTimer = null,
     tvRotateTimer = null;
+
+const TV_SOUND_PROFILES = {
+  padrao: {
+    wave: 'sine',
+    gain: 0.55,
+    step: 0.16,
+    dur: 0.16,
+    tones1: [1046, 1318],
+    tones2: [988, 1318, 988],
+    tones3: [1046, 1318, 1046, 1567]
+  },
+  alto: {
+    wave: 'triangle',
+    gain: 0.95,
+    step: 0.12,
+    dur: 0.18,
+    tones1: [1174, 1567, 1760],
+    tones2: [1318, 1760, 1318, 1760],
+    tones3: [1567, 2093, 1567, 2349, 1760]
+  },
+  sirene: {
+    wave: 'square',
+    gain: 0.7,
+    step: 0.09,
+    dur: 0.11,
+    tones1: [880, 1320, 990, 1480],
+    tones2: [990, 1480, 990, 1480, 880],
+    tones3: [1320, 1760, 1320, 1760, 1567, 2093]
+  }
+};
+
+function setTvAlertSoundEnabled(enabled){
+  TV_ALERT_SOUND = !!enabled;
+  localStorage.setItem('tv_alert_sound_enabled', TV_ALERT_SOUND ? '1' : '0');
+}
+
+function setTvSoundProfile(profile, preview=false){
+  const next = TV_SOUND_PROFILES[profile] ? profile : 'padrao';
+  TV_ALERT_SOUND_PROFILE = next;
+  localStorage.setItem('tv_alert_sound_profile', next);
+  if(preview) playTvAlertSound(2, true);
+}
+
+function initTvSoundSettings(){
+  const savedEnabled = localStorage.getItem('tv_alert_sound_enabled');
+  if(savedEnabled !== null) TV_ALERT_SOUND = savedEnabled === '1';
+  const savedProfile = localStorage.getItem('tv_alert_sound_profile');
+  if(savedProfile && TV_SOUND_PROFILES[savedProfile]) TV_ALERT_SOUND_PROFILE = savedProfile;
+
+  const toggle = $('tvAlertToggle');
+  if(toggle) toggle.checked = TV_ALERT_SOUND;
+  const profile = $('tvAlertProfile');
+  if(profile) profile.value = TV_ALERT_SOUND_PROFILE;
+}
 
 // ── BUILD SELECT / CHECKBOXES DE FILIAL ──────────────────────
 function buildTvFilSelect(){
@@ -1177,27 +1232,29 @@ function nextTvFilial(){
 }
 
 // ── SOM + NOTIFICAÇÕES ───────────────────────────────────────
-function playTvAlertSound(count){
-  if(!TV_ALERT_SOUND) return;
+function playTvAlertSound(count, force=false){
+  if(!TV_ALERT_SOUND && !force) return;
   const AC = window.AudioContext || window.webkitAudioContext;
   if(!AC) return;
   try {
+    const profile = TV_SOUND_PROFILES[TV_ALERT_SOUND_PROFILE] || TV_SOUND_PROFILES.padrao;
     const ctx = new AC();
     const t0 = ctx.currentTime;
-    const tones = count > 3 ? [1046,1318,1046,1567]
-                : count > 1 ? [988,1318,988]
-                :              [1046,1318];
+    const tones = count > 3 ? profile.tones3
+                : count > 1 ? profile.tones2
+                :             profile.tones1;
     tones.forEach((freq, i) => {
       const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = 'sine';
+      osc.type = profile.wave;
       osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, t0 + i*0.16);
-      gain.gain.exponentialRampToValueAtTime(0.55, t0 + i*0.16 + 0.018);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + i*0.16 + 0.14);
+      const start = t0 + i*profile.step;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(profile.gain, start + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + profile.dur - 0.02);
       osc.connect(gain); gain.connect(ctx.destination);
-      osc.start(t0 + i*0.16);
-      osc.stop(t0 + i*0.16 + 0.16);
+      osc.start(start);
+      osc.stop(start + profile.dur);
     });
     setTimeout(() => ctx.close(), 1500);
   } catch(e){ console.warn('som bloqueado:', e.message); }
@@ -1456,4 +1513,5 @@ function getRowsForFilial(dataArr, cod){
 }
 
 // ── START ─────────────────────────────────────────────────────
+initTvSoundSettings();
 loadData();
