@@ -181,6 +181,7 @@ function initData(data) {
   buildFilters();
   buildTvFilSelect();
   rebuildMobFilters();
+  if(TV_FILS.length) { checkNewContracts(); }
   // CSS cuida do show/hide via media queries — não forçar via JS para evitar conflito
   applyFilter();
   startAutoRefresh();
@@ -646,13 +647,12 @@ function switchTab(id,btn){
 
   if(id==='visao') setTimeout(renderCharts,50);
   if(isFilial){
-    if(TV_FIL) renderTv();
+    if(TV_FILS.length) renderTv();
     else{
       const empty=$('tv-empty');
       const tc=$('tv-content');
       if(empty)empty.style.display='flex';
       if(tc)tc.innerHTML='';
-      // No mobile, mostrar botão de escolha e abrir gaveta automaticamente
       const isMob = window.innerWidth <= 1200;
       const emptyBtn=$('tv-empty-btn');
       if(emptyBtn) emptyBtn.style.display=isMob?'block':'none';
@@ -701,127 +701,107 @@ async function autoRefresh(){
 }
 
 // ── MODO TV FILIAL ───────────────────────────────────────────
-let TV_FIL = '', TV_PERIODO = 'mes', tvClockTimer = null, tvRefreshTimer = null;
-let TV_VIEW_KEY = '';
-const TV_SNAPSHOTS = {};
-let TV_ALERT = null;
-let TV_BANNER_UNTIL = 0;
-let TV_BANNER_TIMER = null;
+let TV_FIL = '',          // filial atualmente exibida
+    TV_FILS = [],         // lista de filiais selecionadas para rotação
+    TV_FIL_IDX = 0,       // índice atual na rotação
+    TV_PERIODO = 'mes',
+    TV_INTERVAL = 30,     // segundos entre alternâncias
+    TV_ALERT = true,      // alertas sonoros ativos
+    TV_KNOWN_IDS = new Set(), // IDs de contratos já conhecidos para detecção de novos
+    tvClockTimer = null,
+    tvRefreshTimer = null,
+    tvRotateTimer = null;
 
+// ── BUILD SELECT / CHECKBOXES DE FILIAL ──────────────────────
 function buildTvFilSelect(){
-  const el = $('tvFil'); if(!el) return;
-  const cur = el.value;
-  el.innerHTML = '<option value="">— escolha —</option>';
-  FILIAIS_ORDER.forEach(([cod, nome]) => {
-    if(!ALL.some(r => String(r.Filial) === cod)) return;
-    const o = document.createElement('option');
-    o.value = cod; o.textContent = nome;
-    if(cod === cur) o.selected = true;
-    el.appendChild(o);
-  });
-  // Sync mobile select
-  const mob=$('mob-tvFil');
-  if(mob){
-    mob.innerHTML='<option value="">— escolha —</option>';
-    [...el.options].slice(1).forEach(o=>{
-      const c=document.createElement('option');
-      c.value=o.value;c.textContent=o.textContent;
-      if(o.selected)c.selected=true;
-      mob.appendChild(c);
+  const codsPresentes = [...new Set(ALL.map(r=>String(r.Filial||'')).filter(Boolean))];
+
+  // Sidebar — dropdown com checkboxes
+  const panel = $('tvFil-panel');
+  if(panel){
+    panel.innerHTML = '';
+    FILIAIS_ORDER.forEach(([cod, nome]) => {
+      if(!codsPresentes.includes(cod)) return;
+      const lbl = document.createElement('label');
+      lbl.className = 'sb-opt' + (TV_FILS.includes(cod) ? ' sel' : '');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = cod; cb.checked = TV_FILS.includes(cod);
+      cb.addEventListener('change', () => {
+        lbl.classList.toggle('sel', cb.checked);
+        TV_FILS = [...panel.querySelectorAll('input:checked')].map(i=>i.value);
+        updateTvFilLabel();
+        onTvFilsChange();
+      });
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(' ' + nome));
+      panel.appendChild(lbl);
     });
   }
+
+  // Mobile — lista de checkboxes
+  const mobList = $('mob-tvFil-list');
+  if(mobList){
+    mobList.innerHTML = '';
+    FILIAIS_ORDER.forEach(([cod, nome]) => {
+      if(!codsPresentes.includes(cod)) return;
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:13px;color:#fafafa;border-bottom:1px solid rgba(255,255,255,.06)';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = cod; cb.checked = TV_FILS.includes(cod);
+      cb.style.cssText = 'width:16px;height:16px;accent-color:#f7cb45;cursor:pointer;flex-shrink:0';
+      cb.addEventListener('change', () => {
+        TV_FILS = [...mobList.querySelectorAll('input:checked')].map(i=>i.value);
+      });
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(nome));
+      mobList.appendChild(lbl);
+    });
+  }
+
+  updateTvFilLabel();
 }
 
-function onTvFilChange(){
-  TV_FIL = $('tvFil').value;
+function updateTvFilLabel(){
+  const lbl = $('tvFil-label');
+  if(!lbl) return;
+  if(TV_FILS.length === 0) lbl.textContent = '— escolha —';
+  else if(TV_FILS.length === 1) lbl.textContent = FILIAIS[TV_FILS[0]] || TV_FILS[0];
+  else lbl.textContent = TV_FILS.length + ' filiais';
+}
+
+function onTvFilsChange(){
+  const hasFils = TV_FILS.length > 0;
   const wrap = $('tv-periodo-wrap');
+  const ivWrap = $('tv-interval-wrap');
   const fsBtn = $('tv-fullscreen-btn');
-  if(wrap) wrap.style.display = TV_FIL ? 'block' : 'none';
-  if(fsBtn) fsBtn.style.display = TV_FIL ? 'block' : 'none';
+  if(wrap) wrap.style.display = hasFils ? 'block' : 'none';
+  if(ivWrap) ivWrap.style.display = TV_FILS.length > 1 ? 'block' : 'none';
+  if(fsBtn) fsBtn.style.display = hasFils ? 'block' : 'none';
   const empty = $('tv-empty');
-  if(!TV_FIL){
-    if(empty) empty.style.display='flex';
-    const tc=$('tv-content'); if(tc) tc.innerHTML='';
+  if(!hasFils){
+    stopTvRotation();
+    if(empty) empty.style.display = 'flex';
+    const tc = $('tv-content'); if(tc) tc.innerHTML = '';
     return;
   }
-  if(empty) empty.style.display='none';
+  if(empty) empty.style.display = 'none';
   TV_PERIODO = $('tvPeriodo') ? $('tvPeriodo').value : 'mes';
+  TV_FIL_IDX = 0;
+  TV_FIL = TV_FILS[0];
+  // Inicializar IDs conhecidos sem disparar alertas
+  initKnownIds();
   renderTv();
-}
-function switchTvFilial(){ onTvFilChange(); }
-
-function getTvRowKey(r){
-  return [r.Contrato || '', r.CPF || '', (r.Nome || '').trim()].join('|');
+  if(TV_FILS.length > 1) startTvRotation();
+  else stopTvRotation();
 }
 
-function getTvRowSig(r){
-  return [
-    (r['Data da Liberação'] || '').slice(0, 10),
-    (r['Data Comissao Loja'] || '').slice(0, 10),
-    parseFloat(r['Valor Liberado'] || 0).toFixed(2),
-    parseFloat(r['Base Comissao'] || 0).toFixed(2),
-    parseFloat(r['Comissao Loja'] || 0).toFixed(2),
-    parseFloat(r['Desconto Loja'] || 0).toFixed(2),
-    parseFloat(r['R$ Bonus Loja 1'] || 0).toFixed(2),
-    parseFloat(r['R$ Bonus Loja 2'] || 0).toFixed(2),
-    r['Status Comissao Loja'] || '',
-    r.Tipo || '',
-    r.BCO || ''
-  ].join('|');
-}
+function onTvFilChange(){ onTvFilsChange(); }
+function switchTvFilial(){ onTvFilsChange(); }
 
-function detectTvChanges(rows){
-  const key = TV_FIL + '|' + TV_PERIODO;
-  const prev = TV_SNAPSHOTS[key];
-  const cur = {};
-  rows.forEach(r => { cur[getTvRowKey(r)] = getTvRowSig(r); });
-  TV_SNAPSHOTS[key] = cur;
-  TV_VIEW_KEY = key;
-
-  if (!prev) return { novo: 0, alterado: 0, changedKeys: {} };
-
-  let novo = 0, alterado = 0;
-  const changedKeys = {};
-  Object.keys(cur).forEach(k => {
-    if (!(k in prev)) { novo++; changedKeys[k] = 'novo'; }
-    else if (prev[k] !== cur[k]) { alterado++; changedKeys[k] = 'alt'; }
-  });
-  return { novo, alterado, changedKeys };
-}
-
-function playTvAlertSound(count){
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC) return;
-  try {
-    const ctx = new AC();
-    const t0 = ctx.currentTime;
-    const tones = count > 3
-      ? [1046, 1318, 1046, 1567]
-      : count > 1
-        ? [988, 1318, 988]
-        : [1046, 1318];
-    tones.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, t0 + i * 0.16);
-      gain.gain.exponentialRampToValueAtTime(0.62, t0 + i * 0.16 + 0.018);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.16 + 0.14);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(t0 + i * 0.16);
-      osc.stop(t0 + i * 0.16 + 0.15);
-    });
-    setTimeout(() => ctx.close(), 1200);
-  } catch (e) {
-    console.warn('som TV bloqueado:', e.message);
-  }
-}
-
-function getTvData(){
+function getTvData(filCod){
+  const cod = filCod || TV_FIL;
   const now = new Date();
-  let rows = ALL.filter(r => String(r.Filial) === TV_FIL);
+  let rows = ALL.filter(r => String(r.Filial) === cod);
   if(TV_PERIODO === 'mes'){
     const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
     rows = rows.filter(r => getMes(r['Data da Liberação']) === ym || getMes(r['Data Comissao Loja']) === ym);
@@ -836,6 +816,29 @@ function getTvData(){
   return rows;
 }
 
+// IDs únicos de cada contrato para detecção de novos
+function getContractId(r){ return (r.Contrato||'') + '|' + (r.CPF||'') + '|' + (r['Data da Liberação']||''); }
+
+function initKnownIds(){
+  TV_KNOWN_IDS = new Set();
+  TV_FILS.forEach(cod => {
+    getTvData(cod).forEach(r => TV_KNOWN_IDS.add(getContractId(r)));
+  });
+}
+
+function checkNewContracts(){
+  if(!TV_FILS.length) return;
+  TV_FILS.forEach(cod => {
+    getTvData(cod).forEach(r => {
+      const id = getContractId(r);
+      if(!TV_KNOWN_IDS.has(id)){
+        TV_KNOWN_IDS.add(id);
+        showToast(r, FILIAIS[cod] || cod);
+      }
+    });
+  });
+}
+
 function getPeriodoLabel(){
   const p = $('tvPeriodo') ? $('tvPeriodo').value : TV_PERIODO;
   const now = new Date();
@@ -846,34 +849,10 @@ function getPeriodoLabel(){
 }
 
 function renderTv(){
-  TV_FIL = $('tvFil') ? $('tvFil').value : TV_FIL;
   TV_PERIODO = $('tvPeriodo') ? $('tvPeriodo').value : TV_PERIODO;
-  if(!TV_FIL) return;
+  if(!TV_FIL || !TV_FILS.length) return;
 
   const rows = getTvData();
-  const diff = detectTvChanges(rows);
-  if ((diff.novo + diff.alterado) > 0) {
-    const nowMs = Date.now();
-    const changedNames = rows
-      .filter(r => !!diff.changedKeys[getTvRowKey(r)])
-      .map(r => (r.Nome || '').trim())
-      .filter(Boolean);
-    const uniqueNames = [...new Set(changedNames)];
-    TV_ALERT = {
-      novo: diff.novo,
-      alterado: diff.alterado,
-      total: diff.novo + diff.alterado,
-      changedKeys: diff.changedKeys,
-      changedNames: uniqueNames,
-      until: nowMs + 15000
-    };
-    TV_BANNER_UNTIL = nowMs + 10000;
-    clearTimeout(TV_BANNER_TIMER);
-    TV_BANNER_TIMER = setTimeout(() => {
-      if (Date.now() >= TV_BANNER_UNTIL) renderTv();
-    }, 10050);
-    playTvAlertSound(TV_ALERT.total);
-  }
   const filNome = FILIAIS[TV_FIL] || TV_FIL;
 
   // KPIs
@@ -903,20 +882,6 @@ function renderTv(){
 
   const html = `
   <div class="tv-wrap">
-    ${TV_ALERT && Date.now() < TV_BANNER_UNTIL ? `
-      <div class="tv-center-banner">
-        <div class="tv-center-banner-title">NOVA ATUALIZACAO DETECTADA</div>
-        <div class="tv-center-banner-main">${TV_ALERT.total} atualização${TV_ALERT.total>1?'es':''} na filial ${filNome}</div>
-        <div class="tv-center-banner-sub">
-          ${TV_ALERT.novo} novo${TV_ALERT.novo!==1?'s':''} · ${TV_ALERT.alterado} alterado${TV_ALERT.alterado!==1?'s':''}
-          · ${new Date().toLocaleTimeString('pt-BR')}
-        </div>
-        <div class="tv-center-banner-clients">
-          ${(TV_ALERT.changedNames||[]).slice(0,3).join(' · ')}
-          ${(TV_ALERT.changedNames||[]).length>3 ? ` · +${(TV_ALERT.changedNames||[]).length-3}` : ''}
-        </div>
-      </div>
-    ` : ''}
     <div class="tv-header">
       <div class="tv-brand">
         <div class="tv-brand-logo">LF</div>
@@ -925,14 +890,18 @@ function renderTv(){
           <div class="tv-brand-filial">${filNome}</div>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:2rem">
-        ${TV_ALERT && Date.now() < TV_ALERT.until ? `
-          <div class="tv-update-alert">
-            <span class="tv-update-dot"></span>
-            <span>${TV_ALERT.total} atualização${TV_ALERT.total>1?'es':''}</span>
-            <small>${TV_ALERT.novo} novo${TV_ALERT.novo!==1?'s':''} · ${TV_ALERT.alterado} alterado${TV_ALERT.alterado!==1?'s':''}</small>
+      <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
+        ${TV_FILS.length > 1 ? `
+        <div>
+          <div class="tv-filial-pills">
+            ${TV_FILS.map((cod,i) => `<span class="tv-filial-pill${cod===TV_FIL?' active':''}">${FILIAIS[cod]||cod}</span>`).join('')}
           </div>
-        ` : ''}
+          <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+            <div class="tv-filial-dot"></div>
+            <span style="font-size:9px;font-family:var(--mono);color:var(--t3)">alternando em</span>
+            <div class="tv-rotate-bar"><div class="tv-rotate-fill" id="tv-rotate-progress" style="width:100%"></div></div>
+          </div>
+        </div>` : ''}
         <div class="tv-ticker">
           <div class="tv-live-dot"></div>
           <span style="color:var(--green)">AO VIVO</span>
@@ -995,11 +964,8 @@ function renderTv(){
             <div class="tv-card-title">Últimos contratos</div>
             <span style="font-size:10px;font-family:var(--mono);color:var(--t3)">${rows.length} no período</span>
           </div>
-          ${ultimos.map(r => {
-            const changeType = TV_ALERT && TV_ALERT.changedKeys ? TV_ALERT.changedKeys[getTvRowKey(r)] : '';
-            const cls = changeType ? `tv-contract-item is-updated ${changeType==='novo'?'is-new':'is-changed'}` : 'tv-contract-item';
-            return `
-          <div class="${cls}">
+          ${ultimos.map(r => `
+          <div class="tv-contract-item">
             <div style="flex:1;min-width:0">
               <div class="tv-contract-nome">${r.Nome||'—'}</div>
               <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
@@ -1011,8 +977,7 @@ function renderTv(){
               <div style="font-size:14px;font-weight:700;color:var(--y);font-family:var(--mono)">${fmt(val(r))}</div>
               <div class="tv-contract-data">${fmtData(r['Data da Liberação'])}</div>
             </div>
-          </div>`;
-          }).join('')}
+          </div>`).join('')}
         </div>
       </div>
     </div>
@@ -1042,6 +1007,7 @@ function updateTvClock(){
   tvClockTimer = setTimeout(updateTvClock, 1000);
 }
 
+// ── BARRA DE PROGRESSO DO REFRESH (60s) ──────────────────────
 let tvProgressVal = 100;
 function startTvProgress(){
   clearInterval(tvRefreshTimer);
@@ -1050,18 +1016,114 @@ function startTvProgress(){
     tvProgressVal -= (100/60);
     if(tvProgressVal <= 0){
       tvProgressVal = 100;
-      renderTv(); // auto-refresh a cada 60s
+      autoRefreshTv();
     }
     document.querySelectorAll('#tv-progress').forEach(el=>el.style.width=tvProgressVal+'%');
   }, 1000);
 }
 
+async function autoRefreshTv(){
+  // Recarregar dados antes de renderizar para detectar novos contratos
+  try {
+    const manualUrl = localStorage.getItem('progestor_json_url');
+    const endpoint = manualUrl
+      ? 'proxy.php?url=' + encodeURIComponent(manualUrl)
+      : 'trigger.php?_t=' + Date.now();
+    const data = await fetchJSON(endpoint, manualUrl ? 10000 : 20000);
+    ALL = data.map(r=>({...r,
+      'Valor Liberado':parseFloat(r['Valor Liberado']||0),
+      'Base Comissao':parseFloat(r['Base Comissao']||0),
+      'Comissao Loja':parseFloat(r['Comissao Loja']||0),
+      'Desconto Loja':parseFloat(r['Desconto Loja']||0),
+      'Bonus1':parseFloat(r['R$ Bonus Loja 1']||0),
+      'Bonus2':parseFloat(r['R$ Bonus Loja 2']||0)
+    }));
+    checkNewContracts(); // detecta e notifica novos contratos
+  } catch(e){ /* silencioso */ }
+  renderTv();
+}
+
+// ── ROTAÇÃO DE FILIAIS ────────────────────────────────────────
+let tvRotateVal = 100;
+function startTvRotation(){
+  clearInterval(tvRotateTimer);
+  tvRotateVal = 100;
+  tvRotateTimer = setInterval(()=>{
+    tvRotateVal -= (100 / TV_INTERVAL);
+    document.querySelectorAll('#tv-rotate-progress').forEach(el=>el.style.width=tvRotateVal+'%');
+    if(tvRotateVal <= 0){
+      tvRotateVal = 100;
+      nextTvFilial();
+    }
+  }, 1000);
+}
+
+function stopTvRotation(){
+  clearInterval(tvRotateTimer);
+  tvRotateTimer = null;
+}
+
+function nextTvFilial(){
+  if(TV_FILS.length < 2) return;
+  TV_FIL_IDX = (TV_FIL_IDX + 1) % TV_FILS.length;
+  TV_FIL = TV_FILS[TV_FIL_IDX];
+  renderTv();
+}
+
+// ── TOAST NOTIFICAÇÕES ────────────────────────────────────────
+// Som de notificação via Web Audio API (sem arquivo externo)
+function playAlertSound(){
+  if(!TV_ALERT) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const times = [0, 0.15, 0.3];
+    times.forEach(t => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime + t);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + t + 0.1);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.15);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.2);
+    });
+  } catch(e){}
+}
+
+function showToast(r, filialNome){
+  playAlertSound();
+  const container = $('toast-container');
+  if(!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = `
+    <div class="toast-icon">📋</div>
+    <div class="toast-body">
+      <div class="toast-title">${r.Nome || '—'}</div>
+      <div class="toast-val">${fmt(val(r))}</div>
+      <div class="toast-sub">${(r.Tipo||'—').trim()} · ${r.BCO||'—'}</div>
+      <div class="toast-filial">◉ ${filialNome}</div>
+    </div>
+    <button class="toast-close" onclick="this.closest('.toast').remove()">✕</button>
+  `;
+
+  container.appendChild(toast);
+
+  // Auto-remover após 6s
+  setTimeout(()=>{
+    toast.classList.add('hide');
+    setTimeout(()=>toast.remove(), 350);
+  }, 6000);
+}
+
 function openTvMode(){
-  if(!TV_FIL){ return; }
+  if(!TV_FILS.length && !TV_FIL){ return; }
   const modal = $('tv-modal');
   modal.style.display = 'block';
   renderTv();
-  // Botão fechar
   if(!$('tv-close-btn')){
     const btn = document.createElement('button');
     btn.id = 'tv-close-btn';
@@ -1071,7 +1133,6 @@ function openTvMode(){
     document.body.appendChild(btn);
   }
   $('tv-close-btn').style.display = 'block';
-  // Tela cheia
   if(modal.requestFullscreen) modal.requestFullscreen().catch(()=>{});
 }
 
@@ -1080,6 +1141,7 @@ function closeTvMode(){
   modal.style.display = 'none';
   if($('tv-close-btn')) $('tv-close-btn').style.display = 'none';
   clearInterval(tvRefreshTimer);
+  stopTvRotation();
   if(document.exitFullscreen) document.exitFullscreen().catch(()=>{});
 }
 
@@ -1103,21 +1165,27 @@ function openMobDrawer(){
   if(filCtrl) filCtrl.style.display=isFilial?'block':'none';
 
   if(isFilial){
-    // Popular select de filiais direto do ALL
-    const sel=$('mob-tvFil');
-    if(sel){
-      sel.innerHTML='<option value="">— escolha uma filial —</option>';
+    // Popular checkboxes de filiais no mobile
+    const mobList=$('mob-tvFil-list');
+    if(mobList){
       const codsPresentes=[...new Set(ALL.map(r=>String(r.Filial||'')).filter(Boolean))];
+      mobList.innerHTML='';
       FILIAIS_ORDER.forEach(([cod,nome])=>{
         if(!codsPresentes.includes(cod))return;
-        const o=document.createElement('option');
-        o.value=cod; o.textContent=nome;
-        if(cod===TV_FIL)o.selected=true;
-        sel.appendChild(o);
+        const lbl=document.createElement('label');
+        lbl.style.cssText='display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:13px;color:#fafafa;border-bottom:1px solid rgba(255,255,255,.06)';
+        const cb=document.createElement('input');
+        cb.type='checkbox';cb.value=cod;cb.checked=TV_FILS.includes(cod);
+        cb.style.cssText='width:16px;height:16px;accent-color:#f7cb45;cursor:pointer;flex-shrink:0';
+        cb.addEventListener('change',()=>{TV_FILS=[...mobList.querySelectorAll('input:checked')].map(i=>i.value);});
+        lbl.appendChild(cb);lbl.appendChild(document.createTextNode(nome));
+        mobList.appendChild(lbl);
       });
     }
     const per=$('mob-tvPeriodo');
     if(per) per.value=TV_PERIODO||'mes';
+    const ivMob=$('mob-tvInterval');
+    if(ivMob){ ivMob.value=TV_INTERVAL; $('mob-tvIntervalVal').textContent=TV_INTERVAL+'s'; }
   } else {
     syncMobFilters();
   }
@@ -1127,19 +1195,23 @@ function openMobDrawer(){
 }
 
 function mobAplicarFilial(){
-  const sel=$('mob-tvFil');
+  const mobList=$('mob-tvFil-list');
   const per=$('mob-tvPeriodo');
-  TV_FIL = sel?sel.value:'';
-  TV_PERIODO = per?per.value:'mes';
-  if(!TV_FIL){ sel.focus(); return; }
-  const mainFil=$('tvFil');
+  if(mobList) TV_FILS=[...mobList.querySelectorAll('input:checked')].map(i=>i.value);
+  TV_PERIODO=per?per.value:'mes';
+  if(!TV_FILS.length){ alert('Escolha ao menos uma filial'); return; }
+  TV_FIL=TV_FILS[0];
+  TV_FIL_IDX=0;
   const mainPer=$('tvPeriodo');
-  if(mainFil)mainFil.value=TV_FIL;
-  if(mainPer)mainPer.value=TV_PERIODO;
+  if(mainPer) mainPer.value=TV_PERIODO;
+  // Sync checkboxes desktop
+  buildTvFilSelect();
   closeMobDrawer();
   const empty=$('tv-empty');
-  if(empty)empty.style.display='none';
+  if(empty) empty.style.display='none';
+  initKnownIds();
   renderTv();
+  if(TV_FILS.length>1) startTvRotation(); else stopTvRotation();
 }
 
 function closeMobDrawer(){
@@ -1197,3 +1269,4 @@ function rebuildMobFilters(){
 
 // ── START ─────────────────────────────────────────────────────
 loadData();
+</script>
