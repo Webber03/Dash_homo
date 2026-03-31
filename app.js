@@ -609,18 +609,24 @@ function updateDropLabel(id, emptyLabel, allLabel){
 }
 
 function toggleDrop(id,e){
-  e.stopPropagation();
+  if(e) e.stopPropagation();
   const panel=$(id+'-panel');
   const btn=$(id+'-btn');
+  if(!panel||!btn) return;
   const isOpen=panel.classList.contains('open');
   // fecha todos
   document.querySelectorAll('.sb-drop-panel.open').forEach(p=>p.classList.remove('open'));
   document.querySelectorAll('.sb-drop-btn.open').forEach(b=>b.classList.remove('open'));
-  if(!isOpen){panel.classList.add('open');btn.classList.add('open');}
+  if(!isOpen){
+    // Garantir que o painel tem itens antes de abrir
+    if(id==='tvFil' && panel.children.length===0) buildTvFilSelect();
+    panel.classList.add('open');
+    btn.classList.add('open');
+  }
 }
 
 document.addEventListener('click',e=>{
-  if(!e.target.closest('.sb-drop-wrap')){
+  if(!e.target.closest('.sb-drop-wrap') && !e.target.closest('.sb-drop-panel')){
     document.querySelectorAll('.sb-drop-panel.open').forEach(p=>p.classList.remove('open'));
     document.querySelectorAll('.sb-drop-btn.open').forEach(b=>b.classList.remove('open'));
   }

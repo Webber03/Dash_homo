@@ -61,7 +61,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--s3);border:1px soli
 .page{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 56px)}
 
 /* SIDEBAR */
-.sidebar{background:var(--s1);border-right:1px solid var(--b1);padding:1.25rem 0;display:flex;flex-direction:column;gap:2px;position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto}
+.sidebar{background:var(--s1);border-right:1px solid var(--b1);padding:1.25rem 0;display:flex;flex-direction:column;gap:2px;position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;overflow-x:visible}
 .sidebar-section{padding:0 .75rem;margin-bottom:.25rem}
 .sidebar-label{font-size:10px;font-family:var(--mono);font-weight:500;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;padding:.5rem .75rem .25rem;margin-top:.5rem}
 .nav-item{display:flex;align-items:center;gap:9px;padding:7px 12px;border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:500;color:var(--t2);border:none;background:none;width:100%;text-align:left;transition:all .15s;font-family:var(--font)}
@@ -212,7 +212,7 @@ tbody tr:hover td{background:var(--y-glow)}
 .sb-drop-btn span{flex:1;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .sb-drop-btn svg{color:var(--t3);flex-shrink:0;transition:transform .15s}
 .sb-drop-btn.open svg{transform:rotate(180deg)}
-.sb-drop-panel{display:none;position:absolute;top:34px;left:0;right:0;background:var(--s2);border:1px solid var(--b2);border-radius:var(--r);z-index:300;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.6)}
+.sb-drop-panel{display:none;position:absolute;top:34px;left:0;right:0;background:var(--s2);border:1px solid var(--b2);border-radius:var(--r);z-index:500;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.6)}
 .sb-drop-panel.open{display:block}
 .sb-opt{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:11px;color:var(--t2);transition:all .12s;user-select:none;border-bottom:1px solid rgba(255,255,255,.03)}
 .sb-opt:last-child{border-bottom:none}
