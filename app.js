@@ -912,24 +912,6 @@ function renderTv(){
   const rows = getTvData();
   const filNome = FILIAIS[TV_FIL] || TV_FIL;
 
-  // Detectar mudanças na filial atual e disparar alerta
-  const diff = detectTvChanges(rows, TV_FIL);
-  if((diff.novo + diff.alterado) > 0){
-    const toggle = $('tvAlertToggle');
-    if(!toggle || toggle.checked) playTvAlertSound(diff.novo + diff.alterado);
-    const alert = {
-      novo: diff.novo, alterado: diff.alterado,
-      total: diff.novo + diff.alterado,
-      changedNames: rows.filter(r=>!!diff.changedKeys[getTvRowKey(r)])
-                        .map(r=>(r.Nome||'').trim()).filter(Boolean)
-    };
-    TV_ALERT = {...alert, filNome, until: Date.now()+15000};
-    TV_BANNER_UNTIL = Date.now() + 10000;
-    clearTimeout(TV_BANNER_TIMER);
-    TV_BANNER_TIMER = setTimeout(()=>{ if(Date.now()>=TV_BANNER_UNTIL) renderTv(); }, 10100);
-    showToastAlert(alert);
-  }
-
   // KPIs
   const nContratos = rows.length;
   const sumV = rows.reduce((a,r)=>a+val(r),0);
@@ -975,21 +957,21 @@ function renderTv(){
   const bannerHtml = !showBanner ? '' : (() => {
     const extra = TV_ALERT.changedNames.length > 3 ? ' · +' + (TV_ALERT.changedNames.length - 3) : '';
     const names = TV_ALERT.changedNames.slice(0,3).join(' · ') + extra;
-    return \`<div class="tv-center-banner">
+    return `<div class="tv-center-banner">
       <div class="tv-center-banner-tag">&#x1F514; ATUALIZAÇÃO DETECTADA</div>
-      <div class="tv-center-banner-main">\${TV_ALERT.total} contrato\${TV_ALERT.total>1?'s':''} atualizado\${TV_ALERT.total>1?'s':''}</div>
+      <div class="tv-center-banner-main">${TV_ALERT.total} contrato${TV_ALERT.total>1?'s':''} atualizado${TV_ALERT.total>1?'s':''}</div>
       <div class="tv-center-banner-row">
-        <span class="tv-banner-badge novo">\${TV_ALERT.novo} novo\${TV_ALERT.novo!==1?'s':''}</span>
-        <span class="tv-banner-badge alt">\${TV_ALERT.alterado} alterado\${TV_ALERT.alterado!==1?'s':''}</span>
-        <span class="tv-banner-time">\${new Date().toLocaleTimeString('pt-BR')}</span>
+        <span class="tv-banner-badge novo">${TV_ALERT.novo} novo${TV_ALERT.novo!==1?'s':''}</span>
+        <span class="tv-banner-badge alt">${TV_ALERT.alterado} alterado${TV_ALERT.alterado!==1?'s':''}</span>
+        <span class="tv-banner-time">${new Date().toLocaleTimeString('pt-BR')}</span>
       </div>
-      \${names ? \`<div class="tv-center-banner-names">\${names}</div>\` : ''}
-    </div>\`;
+      ${names ? `<div class="tv-center-banner-names">${names}</div>` : ''}
+    </div>`;
   })();
 
   const html = `
   <div class="tv-wrap">
-    \${bannerHtml}
+    ${bannerHtml}
     <div class="tv-header">
       <div class="tv-brand">
         <div class="tv-brand-logo">LF</div>
@@ -1105,7 +1087,7 @@ function renderTv(){
         </div>
       </div>
     </div>
-  </div>;
+  </div>`;
 
   const empty=$('tv-empty');
   if(empty) empty.style.display='none';
