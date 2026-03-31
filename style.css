@@ -453,3 +453,10 @@ tbody tr:hover td{background:var(--y-glow)}
   #toast-container{bottom:80px;right:12px;left:12px}
   .toast{min-width:unset;max-width:100%}
 }
+/* ── FILIAL TV CHECKBOXES INLINE ── */
+.tv-fil-check-item{display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;font-size:11px;color:var(--t2);transition:all .12s;user-select:none;border-bottom:1px solid rgba(255,255,255,.04)}
+.tv-fil-check-item:last-child{border-bottom:none}
+.tv-fil-check-item:hover{background:rgba(247,203,69,.05);color:var(--t1)}
+.tv-fil-check-item.sel{color:var(--y);background:rgba(247,203,69,.06)}
+.tv-fil-check-item input[type=checkbox]{width:12px;height:12px;accent-color:var(--y);cursor:pointer;flex-shrink:0}
+.tv-fil-check-item span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

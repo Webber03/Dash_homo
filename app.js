@@ -617,12 +617,7 @@ function toggleDrop(id,e){
   // fecha todos
   document.querySelectorAll('.sb-drop-panel.open').forEach(p=>p.classList.remove('open'));
   document.querySelectorAll('.sb-drop-btn.open').forEach(b=>b.classList.remove('open'));
-  if(!isOpen){
-    // Garantir que o painel tem itens antes de abrir
-    if(id==='tvFil' && panel.children.length===0) buildTvFilSelect();
-    panel.classList.add('open');
-    btn.classList.add('open');
-  }
+  if(!isOpen){panel.classList.add('open');btn.classList.add('open');}
 }
 
 document.addEventListener('click',e=>{
@@ -722,57 +717,48 @@ let TV_FIL = '',          // filial atualmente exibida
 function buildTvFilSelect(){
   const codsPresentes = [...new Set(ALL.map(r=>String(r.Filial||'')).filter(Boolean))];
 
-  // Sidebar — dropdown com checkboxes
-  const panel = $('tvFil-panel');
-  if(panel){
-    panel.innerHTML = '';
+  // Função que popula uma lista de checkboxes num container
+  function populateList(container, onChangeFn){
+    if(!container) return;
+    container.innerHTML = '';
     FILIAIS_ORDER.forEach(([cod, nome]) => {
       if(!codsPresentes.includes(cod)) return;
       const lbl = document.createElement('label');
-      lbl.className = 'sb-opt' + (TV_FILS.includes(cod) ? ' sel' : '');
+      lbl.className = 'tv-fil-check-item' + (TV_FILS.includes(cod) ? ' sel' : '');
       const cb = document.createElement('input');
-      cb.type = 'checkbox'; cb.value = cod; cb.checked = TV_FILS.includes(cod);
+      cb.type = 'checkbox';
+      cb.value = cod;
+      cb.checked = TV_FILS.includes(cod);
       cb.addEventListener('change', () => {
         lbl.classList.toggle('sel', cb.checked);
-        TV_FILS = [...panel.querySelectorAll('input:checked')].map(i=>i.value);
-        updateTvFilLabel();
-        onTvFilsChange();
+        onChangeFn();
       });
+      const span = document.createElement('span');
+      span.textContent = nome;
       lbl.appendChild(cb);
-      lbl.appendChild(document.createTextNode(' ' + nome));
-      panel.appendChild(lbl);
+      lbl.appendChild(span);
+      container.appendChild(lbl);
     });
   }
 
-  // Mobile — lista de checkboxes
-  const mobList = $('mob-tvFil-list');
-  if(mobList){
-    mobList.innerHTML = '';
-    FILIAIS_ORDER.forEach(([cod, nome]) => {
-      if(!codsPresentes.includes(cod)) return;
-      const lbl = document.createElement('label');
-      lbl.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:13px;color:#fafafa;border-bottom:1px solid rgba(255,255,255,.06)';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox'; cb.value = cod; cb.checked = TV_FILS.includes(cod);
-      cb.style.cssText = 'width:16px;height:16px;accent-color:#f7cb45;cursor:pointer;flex-shrink:0';
-      cb.addEventListener('change', () => {
-        TV_FILS = [...mobList.querySelectorAll('input:checked')].map(i=>i.value);
-      });
-      lbl.appendChild(cb);
-      lbl.appendChild(document.createTextNode(nome));
-      mobList.appendChild(lbl);
-    });
-  }
+  // Sidebar — lista inline
+  populateList($('tvFil-list'), () => {
+    TV_FILS = [...$('tvFil-list').querySelectorAll('input:checked')].map(i=>i.value);
+    updateTvFilCount();
+    onTvFilsChange();
+  });
 
-  updateTvFilLabel();
+  // Mobile — lista na gaveta
+  populateList($('mob-tvFil-list'), () => {
+    TV_FILS = [...$('mob-tvFil-list').querySelectorAll('input:checked')].map(i=>i.value);
+  });
 }
 
-function updateTvFilLabel(){
-  const lbl = $('tvFil-label');
-  if(!lbl) return;
-  if(TV_FILS.length === 0) lbl.textContent = '— escolha —';
-  else if(TV_FILS.length === 1) lbl.textContent = FILIAIS[TV_FILS[0]] || TV_FILS[0];
-  else lbl.textContent = TV_FILS.length + ' filiais';
+function updateTvFilCount(){
+  const el = $('tvFil-count');
+  if(!el) return;
+  if(TV_FILS.length === 0){ el.style.display='none'; el.textContent=''; }
+  else { el.style.display='inline'; el.textContent = TV_FILS.length + ' selecionada' + (TV_FILS.length>1?'s':''); }
 }
 
 function onTvFilsChange(){

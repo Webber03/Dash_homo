@@ -205,16 +205,13 @@
       <div class="sidebar-section">
         <div style="display:flex;flex-direction:column;gap:8px;padding:0 4px">
 
-          <!-- Filiais multi-select -->
+          <!-- Filiais checkboxes inline -->
           <div class="fgroup">
-            <label class="sb-filter-label">Filiais</label>
-            <div class="sb-drop-wrap" id="tvFil-wrap">
-              <button class="sb-drop-btn" id="tvFil-btn" onclick="toggleDrop('tvFil',event)">
-                <span id="tvFil-label">— escolha —</span>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-              <div class="sb-drop-panel" id="tvFil-panel"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <label class="sb-filter-label" style="margin:0">Filiais</label>
+              <span id="tvFil-count" style="font-size:9px;font-family:var(--mono);color:var(--y);display:none"></span>
             </div>
+            <div id="tvFil-list" style="background:var(--s2);border:1px solid var(--b2);border-radius:var(--r);overflow:hidden;max-height:180px;overflow-y:auto"></div>
           </div>
 
           <!-- Intervalo de alternância -->
