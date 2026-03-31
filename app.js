@@ -1261,4 +1261,3 @@ function rebuildMobFilters(){
 
 // ── START ─────────────────────────────────────────────────────
 loadData();
-</script>
