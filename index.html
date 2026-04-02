@@ -134,9 +134,12 @@
         <label style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:6px">Período</label>
         <select id="mob-tvPeriodo" onchange="TV_PERIODO=this.value" style="width:100%;height:44px;font-size:14px;background:#232326;border:1px solid rgba(255,255,255,.15);color:#fafafa;border-radius:8px;padding:0 12px;outline:none">
           <option value="mes">Mês atual</option>
-          <option value="30">Últimos 30 dias</option>
-          <option value="7">Últimos 7 dias</option>
           <option value="hoje">Hoje</option>
+          <option value="7">Últimos 7 dias</option>
+          <option value="14">Últimos 14 dias</option>
+          <option value="30">Últimos 30 dias</option>
+          <option value="60">Últimos 60 dias</option>
+          <option value="90">Últimos 90 dias</option>
         </select>
       </div>
       <button class="btn" onclick="mobAplicarFilial()" style="height:44px;font-size:14px;width:100%">Ver painel</button>
@@ -166,35 +169,37 @@
       </button>
     </div>
 
-    <div class="sidebar-label">Filtros rápidos</div>
-    <div class="sidebar-section">
-      <div style="display:flex;flex-direction:column;gap:6px;padding:0 4px">
+    <div id="sb-quick-filters">
+      <div class="sidebar-label">Filtros rápidos</div>
+      <div class="sidebar-section">
+        <div style="display:flex;flex-direction:column;gap:6px;padding:0 4px">
 
-        <!-- MÊS select -->
-        <div class="fgroup">
-          <label class="sb-filter-label">Mês</label>
-          <select id="fMes" class="sb-select"><option value="">Todos</option></select>
-        </div>
-
-        <!-- FILIAL dropdown multi -->
-        <div class="fgroup">
-          <label class="sb-filter-label">Filial</label>
-          <div class="sb-drop-wrap" id="fFil-wrap">
-            <button class="sb-drop-btn" id="fFil-btn" onclick="toggleDrop('fFil',event)">
-              <span id="fFil-label">Todas</span>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-            <div class="sb-drop-panel" id="fFil-panel"></div>
-            <select id="fFil" multiple style="display:none"></select>
+          <!-- MÊS select -->
+          <div class="fgroup">
+            <label class="sb-filter-label">Mês</label>
+            <select id="fMes" class="sb-select"><option value="">Todos</option></select>
           </div>
-        </div>
 
-        <!-- CANAL dropdown simples -->
-        <div class="fgroup">
-          <label class="sb-filter-label">Canal de venda</label>
-          <select id="fCanal" class="sb-select"><option value="">Todos</option></select>
-        </div>
+          <!-- FILIAL dropdown multi -->
+          <div class="fgroup">
+            <label class="sb-filter-label">Filial</label>
+            <div class="sb-drop-wrap" id="fFil-wrap">
+              <button class="sb-drop-btn" id="fFil-btn" onclick="toggleDrop('fFil',event)">
+                <span id="fFil-label">Todas</span>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <div class="sb-drop-panel" id="fFil-panel"></div>
+              <select id="fFil" multiple style="display:none"></select>
+            </div>
+          </div>
 
+          <!-- CANAL dropdown simples -->
+          <div class="fgroup">
+            <label class="sb-filter-label">Canal de venda</label>
+            <select id="fCanal" class="sb-select"><option value="">Todos</option></select>
+          </div>
+
+        </div>
       </div>
     </div>
 
@@ -225,15 +230,32 @@
             </div>
           </div>
 
-          <!-- Período -->
+          <!-- Período flexível -->
           <div id="tv-periodo-wrap" style="display:none" class="fgroup">
             <label class="sb-filter-label">Período</label>
-            <select id="tvPeriodo" class="sb-select" onchange="renderTv()">
+            <select id="tvPeriodo" class="sb-select" onchange="onTvPeriodoChange()">
               <option value="mes">Mês atual</option>
-              <option value="30">Últimos 30 dias</option>
-              <option value="7">Últimos 7 dias</option>
               <option value="hoje">Hoje</option>
+              <option value="7">Últimos 7 dias</option>
+              <option value="14">Últimos 14 dias</option>
+              <option value="30">Últimos 30 dias</option>
+              <option value="60">Últimos 60 dias</option>
+              <option value="90">Últimos 90 dias</option>
+              <option value="custom">Personalizado...</option>
             </select>
+            <!-- Range personalizado -->
+            <div id="tv-custom-range" style="display:none;margin-top:6px;display:none;flex-direction:column;gap:4px">
+              <div style="display:flex;gap:4px">
+                <div style="flex:1">
+                  <label class="sb-filter-label">De</label>
+                  <input type="date" id="tvDe" class="sb-select" style="height:28px;font-size:11px;color-scheme:dark" onchange="renderTv()">
+                </div>
+                <div style="flex:1">
+                  <label class="sb-filter-label">Até</label>
+                  <input type="date" id="tvAte" class="sb-select" style="height:28px;font-size:11px;color-scheme:dark" onchange="renderTv()">
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Alertas -->

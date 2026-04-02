@@ -657,6 +657,9 @@ function switchTab(id,btn){
   const isFilial = id==='filial';
   const sbCtrl=$('sb-filial-controls');
   if(sbCtrl) sbCtrl.style.display=isFilial?'block':'none';
+  // Esconder filtros rápidos e KPIs/filter-bar quando em filial
+  const sbQuick=$('sb-quick-filters');
+  if(sbQuick) sbQuick.style.display=isFilial?'none':'block';
   document.querySelectorAll('.filter-bar,.kpi-grid').forEach(el=>{
     el.style.display=isFilial?'none':'';
   });
@@ -867,6 +870,15 @@ function onTvFilsChange(){
 function onTvFilChange(){ onTvFilsChange(); }
 function switchTvFilial(){ onTvFilsChange(); }
 
+function onTvPeriodoChange(){
+  TV_PERIODO = $('tvPeriodo').value;
+  const customWrap = $('tv-custom-range');
+  if(customWrap){
+    customWrap.style.display = TV_PERIODO === 'custom' ? 'flex' : 'none';
+  }
+  if(TV_PERIODO !== 'custom') renderTv();
+}
+
 function getTvData(filCod){
   const cod = filCod || TV_FIL;
   const now = new Date();
@@ -877,6 +889,18 @@ function getTvData(filCod){
   } else if(TV_PERIODO === 'hoje'){
     const hoje = now.toISOString().slice(0,10);
     rows = rows.filter(r => (r['Data da Liberação']||'').slice(0,10) === hoje);
+  } else if(TV_PERIODO === 'custom'){
+    const de = $('tvDe') ? $('tvDe').value : '';
+    const ate = $('tvAte') ? $('tvAte').value : '';
+    if(de || ate){
+      rows = rows.filter(r => {
+        const lib = (r['Data da Liberação']||'').slice(0,10);
+        const com = (r['Data Comissao Loja']||'').slice(0,10);
+        const refLib = lib && (!de||lib>=de) && (!ate||lib<=ate);
+        const refCom = com && (!de||com>=de) && (!ate||com<=ate);
+        return refLib || refCom;
+      });
+    }
   } else {
     const dias = parseInt(TV_PERIODO);
     const limite = new Date(now - dias*86400000).toISOString().slice(0,10);
@@ -954,10 +978,19 @@ function checkAndNotify(newAll){
 function getPeriodoLabel(){
   const p = $('tvPeriodo') ? $('tvPeriodo').value : TV_PERIODO;
   const now = new Date();
-  if(p === 'mes') return MES[now.getMonth()] + '/' + String(now.getFullYear()).slice(2);
-  if(p === 'hoje') return 'Hoje';
-  if(p === '7') return 'Últimos 7 dias';
-  return 'Últimos 30 dias';
+  if(p === 'mes')    return MES[now.getMonth()] + '/' + String(now.getFullYear()).slice(2);
+  if(p === 'hoje')   return 'Hoje';
+  if(p === 'custom'){
+    const de = $('tvDe') ? $('tvDe').value : '';
+    const ate = $('tvAte') ? $('tvAte').value : '';
+    if(de && ate) return fmtData(de) + ' – ' + fmtData(ate);
+    if(de)  return 'A partir de ' + fmtData(de);
+    if(ate) return 'Até ' + fmtData(ate);
+    return 'Personalizado';
+  }
+  const dias = parseInt(p);
+  if(!isNaN(dias)) return 'Últimos ' + dias + ' dias';
+  return 'Todos';
 }
 
 function renderTv(){
@@ -1077,23 +1110,17 @@ function renderTv(){
     </div>` : ''}
 
     <div class="tv-body">
-      <!-- KPIs -->
-      <div class="tv-kpis">
+      <!-- KPIs: apenas Valor liberado e Líquido loja -->
+      <div class="tv-kpis" style="grid-template-columns:1fr 1fr">
         <div class="tv-kpi">
           <div class="tv-kpi-label">Valor liberado</div>
-          <div class="tv-kpi-val">${fmt(sumV)}</div>
+          <div class="tv-kpi-val" style="font-size:3rem">${fmt(sumV)}</div>
           <div class="tv-kpi-sub">${nContratos.toLocaleString('pt-BR')} contrato${nContratos!==1?'s':''}</div>
           <div class="tv-kpi-icon">💰</div>
         </div>
-        <div class="tv-kpi">
-          <div class="tv-kpi-label">Comissão loja</div>
-          <div class="tv-kpi-val">${fmt(sumC)}</div>
-          <div class="tv-kpi-sub">por Data Comissão</div>
-          <div class="tv-kpi-icon">🏦</div>
-        </div>
-        <div class="tv-kpi" style="grid-column:span 1;border-color:rgba(34,211,238,.2)">
+        <div class="tv-kpi" style="border-color:rgba(34,211,238,.2)">
           <div class="tv-kpi-label">Líquido loja</div>
-          <div class="tv-kpi-val" style="font-size:3.2rem">${fmt(sumL)}</div>
+          <div class="tv-kpi-val" style="font-size:3rem">${fmt(sumL)}</div>
           <div class="tv-kpi-sub">${sumD>0?'− '+fmt(sumD)+' descontos':'sem descontos'}</div>
           <div class="tv-kpi-icon">✅</div>
         </div>
@@ -1366,7 +1393,7 @@ function openMobDrawer(){
       });
     }
     const per=$('mob-tvPeriodo');
-    if(per) per.value=TV_PERIODO||'mes';
+    if(per){ per.value=TV_PERIODO||'mes'; }
     const ivMob=$('mob-tvInterval');
     if(ivMob){ ivMob.value=TV_INTERVAL; $('mob-tvIntervalVal').textContent=TV_INTERVAL+'s'; }
   } else {
