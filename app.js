@@ -361,12 +361,73 @@ function groupBy(arr,key,valFn){const m={};arr.forEach(r=>{const k=r[key]||'—'
 function mkChart(id,type,labels,data,colors,opts={}){
   if(CHARTS[id])CHARTS[id].destroy();
   const ctx=$(id).getContext('2d');
+
+  // Tooltip com % para doughnut
+  const isDoughnut = type === 'doughnut';
+  const tooltipPlugin = {
+    tooltip:{
+      callbacks:{
+        label: ctx => {
+          const val = ctx.parsed;
+          if(isDoughnut){
+            const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
+            const pct = total > 0 ? ((val/total)*100).toFixed(1) : '0.0';
+            return `  ${ctx.label}: ${fmt(val)} (${pct}%)`;
+          }
+          return `  ${ctx.label}: ${val}`;
+        }
+      },
+      backgroundColor:'#18181b',
+      borderColor:'rgba(255,255,255,.1)',
+      borderWidth:1,
+      titleColor:'#a1a1aa',
+      bodyColor:'#fafafa',
+      padding:10,
+      cornerRadius:8,
+      displayColors:true,
+      boxWidth:8,
+      boxHeight:8,
+      boxPadding:4,
+    }
+  };
+
+  // Plugin para exibir % nas fatias do doughnut
+  const doughnutLabelPlugin = isDoughnut ? {
+    id:'doughnutPct_'+id,
+    afterDatasetsDraw(chart){
+      const {ctx: c, data} = chart;
+      const total = data.datasets[0].data.reduce((a,b)=>a+b,0);
+      if(!total) return;
+      chart.getDatasetMeta(0).data.forEach((arc, i) => {
+        const val = data.datasets[0].data[i];
+        const pct = ((val/total)*100);
+        if(pct < 4) return; // não mostrar se fatia muito pequena
+        const {x,y} = arc.tooltipPosition();
+        c.save();
+        c.fillStyle = '#fff';
+        c.font = 'bold 10px Inter, sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.shadowColor = 'rgba(0,0,0,.6)';
+        c.shadowBlur = 4;
+        c.fillText(pct.toFixed(0)+'%', x, y);
+        c.restore();
+      });
+    }
+  } : null;
+
+  const plugins = doughnutLabelPlugin ? [doughnutLabelPlugin] : [];
+
   CHARTS[id]=new Chart(ctx,{
     type,
     data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:0,borderRadius:type==='bar'?4:0,...(opts.ds||{})}]},
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},...(opts.plugins||{})},
+      plugins:{
+        legend:{display:false},
+        ...tooltipPlugin,
+        ...(opts.plugins||{})
+      },
       scales:opts.scales||{},
       onClick:(e,els)=>{
         if(!els.length)return;
@@ -375,7 +436,8 @@ function mkChart(id,type,labels,data,colors,opts={}){
       },
       onHover:(e,els)=>{e.native.target.style.cursor=els.length?'pointer':'default';},
       ...( ({onClick:_,onHover:__,...rest})=>rest )(opts.extra||{})
-    }
+    },
+    plugins
   });
 }
 
