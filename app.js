@@ -390,9 +390,10 @@ function roundRect(ctx, x, y, w, h, r) {
 const doughnutCenterPlugin = {
   id: 'doughnutCenter',
   afterDraw(chart) {
-    const enabled = chart?.options?.plugins?.doughnutCenter?.enabled;
-    if (!enabled) return;
-    if (chart.config?.type !== 'doughnut' && chart.config?.type !== 'pie') return;
+    // Verifica o tipo diretamente — mais confiável do que depender de options.plugins
+    // quando o plugin é registrado apenas por instância (não globalmente)
+    const chartType = chart.config?.type;
+    if (chartType !== 'doughnut' && chartType !== 'pie') return;
     const dataset = chart.data?.datasets?.[0];
     if (!dataset || !Array.isArray(dataset.data)) return;
 
@@ -491,13 +492,13 @@ function mkChart(id,type,labels,data,colors,opts={}){
         } : {})
       },
       scales:opts.scales||{},
+      ...(isDoughnut && opts.extra ? {cutout: opts.extra.cutout || '62%'} : {}),
       onClick:(e,els)=>{
         if(!els.length)return;
         const label=CHARTS[id].data.labels[els[0].index];
         if(opts.onClickLabel) opts.onClickLabel(label);
       },
       onHover:(e,els)=>{e.native.target.style.cursor=els.length?'pointer':'default';},
-      ...( ({onClick:_,onHover:__,...rest})=>rest )(opts.extra||{})
     },
     plugins:[doughnutCenterPlugin,...(opts.pluginsList||[])]
   });
