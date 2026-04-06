@@ -108,10 +108,27 @@ const MES=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','De
 
 // ── UTILS ─────────────────────────────────────────────────────
 const $=id=>document.getElementById(id);
-const val=r=>parseFloat(r['Valor Liberado']||0);
-const com=r=>parseFloat(r['Comissao Loja']||0);
+function toNumber(v){
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  let s = String(v).trim();
+  if (!s) return 0;
+  s = s.replace(/\s/g, '').replace('%', '').replace(/[Rr]\$/g, '');
+  const hasComma = s.includes(',');
+  const hasDot = s.includes('.');
+  if (hasComma && hasDot) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (hasComma) {
+    s = s.replace(',', '.');
+  }
+  s = s.replace(/[^0-9.-]/g, '');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+const val=r=>toNumber(r['Valor Liberado']);
+const com=r=>toNumber(r['Comissao Loja']);
 // comissão total em R$: percentual aplicado sobre base + bônus absolutos
-const comTotal=r=>(r['Base Comissao']||0)*com(r)/100+(r['Bonus1']||0)+(r['Bonus2']||0);
+const comTotal=r=>toNumber(r['Base Comissao'])*com(r)/100+toNumber(r['Bonus1'])+toNumber(r['Bonus2']);
 const fmt=n=>'R$ '+parseFloat(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtK=n=>'R$ '+parseFloat(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const getMes=d=>{if(!d)return null;const p=d.split('-');return p[0]+'-'+p[1]};
@@ -191,7 +208,7 @@ function reloadData(){ stopAutoRefresh(); loadData(); }
 
 // ── INIT ──────────────────────────────────────────────────────
 function initData(data) {
-  ALL=data.map(r=>({...r,'Valor Liberado':parseFloat(r['Valor Liberado']||0),'Base Comissao':parseFloat(r['Base Comissao']||0),'Comissao Loja':parseFloat(r['Comissao Loja']||0),'Desconto Loja':parseFloat(r['Desconto Loja']||0),'Bonus1':parseFloat(r['R$ Bonus Loja 1']||0),'Bonus2':parseFloat(r['R$ Bonus Loja 2']||0)}));
+  ALL=data.map(r=>({...r,'Valor Liberado':toNumber(r['Valor Liberado']),'Base Comissao':toNumber(r['Base Comissao']),'Comissao Loja':toNumber(r['Comissao Loja']),'Desconto Loja':toNumber(r['Desconto Loja']),'Bonus1':toNumber(r['R$ Bonus Loja 1']),'Bonus2':toNumber(r['R$ Bonus Loja 2'])}));
   hide('loader'); hide('error-box'); show('app');
   $('status-txt').textContent=ALL.length+' registros';if($('sidebar-total'))$('sidebar-total').textContent=ALL.length.toLocaleString('pt-BR');
   $('ts').textContent='atualizado '+new Date().toLocaleTimeString('pt-BR');
@@ -361,73 +378,12 @@ function groupBy(arr,key,valFn){const m={};arr.forEach(r=>{const k=r[key]||'—'
 function mkChart(id,type,labels,data,colors,opts={}){
   if(CHARTS[id])CHARTS[id].destroy();
   const ctx=$(id).getContext('2d');
-
-  // Tooltip com % para doughnut
-  const isDoughnut = type === 'doughnut';
-  const tooltipPlugin = {
-    tooltip:{
-      callbacks:{
-        label: ctx => {
-          const val = ctx.parsed;
-          if(isDoughnut){
-            const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
-            const pct = total > 0 ? ((val/total)*100).toFixed(1) : '0.0';
-            return `  ${ctx.label}: ${fmt(val)} (${pct}%)`;
-          }
-          return `  ${ctx.label}: ${val}`;
-        }
-      },
-      backgroundColor:'#18181b',
-      borderColor:'rgba(255,255,255,.1)',
-      borderWidth:1,
-      titleColor:'#a1a1aa',
-      bodyColor:'#fafafa',
-      padding:10,
-      cornerRadius:8,
-      displayColors:true,
-      boxWidth:8,
-      boxHeight:8,
-      boxPadding:4,
-    }
-  };
-
-  // Plugin para exibir % nas fatias do doughnut
-  const doughnutLabelPlugin = isDoughnut ? {
-    id:'doughnutPct_'+id,
-    afterDatasetsDraw(chart){
-      const {ctx: c, data} = chart;
-      const total = data.datasets[0].data.reduce((a,b)=>a+b,0);
-      if(!total) return;
-      chart.getDatasetMeta(0).data.forEach((arc, i) => {
-        const val = data.datasets[0].data[i];
-        const pct = ((val/total)*100);
-        if(pct < 4) return; // não mostrar se fatia muito pequena
-        const {x,y} = arc.tooltipPosition();
-        c.save();
-        c.fillStyle = '#fff';
-        c.font = 'bold 10px Inter, sans-serif';
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        c.shadowColor = 'rgba(0,0,0,.6)';
-        c.shadowBlur = 4;
-        c.fillText(pct.toFixed(0)+'%', x, y);
-        c.restore();
-      });
-    }
-  } : null;
-
-  const plugins = doughnutLabelPlugin ? [doughnutLabelPlugin] : [];
-
   CHARTS[id]=new Chart(ctx,{
     type,
     data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:0,borderRadius:type==='bar'?4:0,...(opts.ds||{})}]},
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{
-        legend:{display:false},
-        ...tooltipPlugin,
-        ...(opts.plugins||{})
-      },
+      plugins:{legend:{display:false},...(opts.plugins||{})},
       scales:opts.scales||{},
       onClick:(e,els)=>{
         if(!els.length)return;
@@ -436,8 +392,7 @@ function mkChart(id,type,labels,data,colors,opts={}){
       },
       onHover:(e,els)=>{e.native.target.style.cursor=els.length?'pointer':'default';},
       ...( ({onClick:_,onHover:__,...rest})=>rest )(opts.extra||{})
-    },
-    plugins
+    }
   });
 }
 
@@ -772,7 +727,7 @@ async function autoRefresh(){
       ? 'proxy.php?url=' + encodeURIComponent(manualUrl)
       : 'trigger.php?_t=' + Date.now();
     const data = await fetchJSON(endpoint, manualUrl ? 10000 : 20000);
-    ALL=data.map(r=>({...r,'Valor Liberado':parseFloat(r['Valor Liberado']||0),'Base Comissao':parseFloat(r['Base Comissao']||0),'Comissao Loja':parseFloat(r['Comissao Loja']||0),'Desconto Loja':parseFloat(r['Desconto Loja']||0),'Bonus1':parseFloat(r['R$ Bonus Loja 1']||0),'Bonus2':parseFloat(r['R$ Bonus Loja 2']||0)}));
+    ALL=data.map(r=>({...r,'Valor Liberado':toNumber(r['Valor Liberado']),'Base Comissao':toNumber(r['Base Comissao']),'Comissao Loja':toNumber(r['Comissao Loja']),'Desconto Loja':toNumber(r['Desconto Loja']),'Bonus1':toNumber(r['R$ Bonus Loja 1']),'Bonus2':toNumber(r['R$ Bonus Loja 2'])}));
     $('ts').textContent='atualizado '+new Date().toLocaleTimeString('pt-BR');
     $('status-txt').textContent=ALL.length+' registros';
     if($('sidebar-total'))$('sidebar-total').textContent=ALL.length.toLocaleString('pt-BR');
@@ -1281,12 +1236,12 @@ async function autoRefreshTv(){
       : 'trigger.php?_t=' + Date.now();
     const data = await fetchJSON(endpoint, manualUrl ? 10000 : 20000);
     ALL = data.map(r=>({...r,
-      'Valor Liberado':parseFloat(r['Valor Liberado']||0),
-      'Base Comissao':parseFloat(r['Base Comissao']||0),
-      'Comissao Loja':parseFloat(r['Comissao Loja']||0),
-      'Desconto Loja':parseFloat(r['Desconto Loja']||0),
-      'Bonus1':parseFloat(r['R$ Bonus Loja 1']||0),
-      'Bonus2':parseFloat(r['R$ Bonus Loja 2']||0)
+      'Valor Liberado':toNumber(r['Valor Liberado']),
+      'Base Comissao':toNumber(r['Base Comissao']),
+      'Comissao Loja':toNumber(r['Comissao Loja']),
+      'Desconto Loja':toNumber(r['Desconto Loja']),
+      'Bonus1':toNumber(r['R$ Bonus Loja 1']),
+      'Bonus2':toNumber(r['R$ Bonus Loja 2'])
     }));
     checkNewContracts(); // detecta e notifica novos contratos
   } catch(e){ /* silencioso */ }
@@ -1554,12 +1509,12 @@ function startGlobalAlertTimer(){
         : 'trigger.php?_t=' + Date.now();
       const data = await fetchJSON(endpoint, manualUrl ? 10000 : 20000);
       const newAll = data.map(r=>({...r,
-        'Valor Liberado':parseFloat(r['Valor Liberado']||0),
-        'Base Comissao':parseFloat(r['Base Comissao']||0),
-        'Comissao Loja':parseFloat(r['Comissao Loja']||0),
-        'Desconto Loja':parseFloat(r['Desconto Loja']||0),
-        'Bonus1':parseFloat(r['R$ Bonus Loja 1']||0),
-        'Bonus2':parseFloat(r['R$ Bonus Loja 2']||0)
+        'Valor Liberado':toNumber(r['Valor Liberado']),
+        'Base Comissao':toNumber(r['Base Comissao']),
+        'Comissao Loja':toNumber(r['Comissao Loja']),
+        'Desconto Loja':toNumber(r['Desconto Loja']),
+        'Bonus1':toNumber(r['R$ Bonus Loja 1']),
+        'Bonus2':toNumber(r['R$ Bonus Loja 2'])
       }));
 
       // Checar mudanças ANTES de atualizar ALL
