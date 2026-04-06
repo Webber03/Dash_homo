@@ -85,6 +85,7 @@ const CANAIS = {
   '86': 'URA VOIP',
   '87': 'ESTAGIÁRIO(A)',
   '107': 'DISP WHATSAPP INTELIGENTE',
+  '108': 'SDR',
 };
 const canalNome = codigo => CANAIS[String(codigo)] || String(codigo);
 
