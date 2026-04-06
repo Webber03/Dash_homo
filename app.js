@@ -375,15 +375,120 @@ function renderKpis(){
 
 function groupBy(arr,key,valFn){const m={};arr.forEach(r=>{const k=r[key]||'—';m[k]=(m[k]||0)+valFn(r)});return Object.entries(m).sort((a,b)=>b[1]-a[1])}
 
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+const doughnutCenterPlugin = {
+  id: 'doughnutCenter',
+  afterDraw(chart) {
+    const enabled = chart?.options?.plugins?.doughnutCenter?.enabled;
+    if (!enabled) return;
+    if (chart.config?.type !== 'doughnut' && chart.config?.type !== 'pie') return;
+    const dataset = chart.data?.datasets?.[0];
+    if (!dataset || !Array.isArray(dataset.data)) return;
+
+    const values = dataset.data;
+    const total = values.reduce((a, n) => a + (Number(n) || 0), 0);
+    if (!values.length) return;
+
+    const act = typeof chart.getActiveElements === 'function' ? chart.getActiveElements() : [];
+    const idxFromHover = act && act.length ? act[0].index : null;
+    const idx =
+      idxFromHover !== null && idxFromHover !== undefined
+        ? idxFromHover
+        : values.reduce((bestI, v, i) => (v > values[bestI] ? i : bestI), 0);
+
+    const label = (chart.data?.labels?.[idx] ?? '—').toString().slice(0, 26);
+    const value = Number(values[idx] || 0);
+    const pct = total ? (value / total) * 100 : 0;
+
+    const { left, right, top, bottom } = chart.chartArea || {};
+    if ([left, right, top, bottom].some(v => typeof v !== 'number')) return;
+    const cx = (left + right) / 2;
+    const cy = (top + bottom) / 2;
+
+    const pillW = 150;
+    const pillH = 54;
+    const pillX = cx - pillW / 2;
+    const pillY = cy - pillH / 2;
+
+    // Fundo sutil (escuro, com borda fina)
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,.04)';
+    ctx.strokeStyle = 'rgba(255,255,255,.10)';
+    ctx.lineWidth = 1;
+    roundRect(ctx, pillX, pillY, pillW, pillH, 12);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.fillStyle = '#a1a1aa';
+    ctx.font = '600 11px JetBrains Mono, monospace';
+    ctx.fillText(label + ':', cx, cy - 18);
+
+    ctx.fillStyle = '#fafafa';
+    ctx.font = '800 13px JetBrains Mono, monospace';
+    ctx.fillText(fmt(value), cx, cy - 3);
+
+    ctx.fillStyle = '#f7cb45';
+    ctx.font = '800 11px JetBrains Mono, monospace';
+    ctx.fillText('(' + pct.toFixed(1) + '%)', cx, cy + 13);
+
+    ctx.restore();
+  }
+};
+
 function mkChart(id,type,labels,data,colors,opts={}){
   if(CHARTS[id])CHARTS[id].destroy();
   const ctx=$(id).getContext('2d');
+  const isDoughnut = type === 'doughnut' || type === 'pie';
+  const totalForTooltip = () => (Array.isArray(data) ? data.reduce((a,n)=>a+(Number(n)||0),0) : 0);
   CHARTS[id]=new Chart(ctx,{
     type,
     data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:0,borderRadius:type==='bar'?4:0,...(opts.ds||{})}]},
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},...(opts.plugins||{})},
+      plugins:{
+        legend:{display:false},
+        ...(opts.plugins||{}),
+        ...(isDoughnut ? {
+          tooltip:{
+            enabled:true,
+            backgroundColor:'rgba(24,24,27,.96)',
+            borderColor:'rgba(255,255,255,.10)',
+            borderWidth:1,
+            padding:10,
+            cornerRadius:12,
+            displayColors:false,
+            caretSize:0,
+            titleColor:'#fafafa',
+            bodyColor:'#fafafa',
+            bodyFont:{family:'JetBrains Mono, monospace',size:11,weight:'600'},
+            callbacks:{
+              title:()=>undefined,
+              label:(c)=>{
+                const idx = c.dataIndex;
+                const v = Number((Array.isArray(c.dataset?.data) ? c.dataset.data[idx] : data[idx]) || 0);
+                const t = totalForTooltip();
+                const p = t ? (v / t) * 100 : 0;
+                return `${c.label}: ${fmt(v)} (${p.toFixed(1)}%)`;
+              }
+            }
+          },
+          doughnutCenter:{enabled:true}
+        } : {})
+      },
       scales:opts.scales||{},
       onClick:(e,els)=>{
         if(!els.length)return;
@@ -392,7 +497,8 @@ function mkChart(id,type,labels,data,colors,opts={}){
       },
       onHover:(e,els)=>{e.native.target.style.cursor=els.length?'pointer':'default';},
       ...( ({onClick:_,onHover:__,...rest})=>rest )(opts.extra||{})
-    }
+    },
+    plugins:[doughnutCenterPlugin,...(opts.pluginsList||[])]
   });
 }
 
