@@ -560,8 +560,8 @@ function toggleVerTudo(){
 
 function stCom(s){
   if(!s) return '—';
-  if(s==='RECEBIDA') return '<span style="color:var(--green);font-size:10px;font-weight:600">✓ REC</span>';
-  if(s==='PENDENTE') return '<span style="color:var(--accent4);font-size:10px;font-weight:600">⏳ PEN</span>';
+  if(s==='RECEBIDA') return '<span style="color:var(--green);font-size:10px;font-weight:600"><i class="ph ph-check" style="vertical-align:middle;margin-right:2px"></i> REC</span>';
+  if(s==='PENDENTE') return '<span style="color:var(--accent4);font-size:10px;font-weight:600"><i class="ph ph-hourglass" style="vertical-align:middle;margin-right:2px"></i> PEN</span>';
   return `<span style="font-size:10px">${s}</span>`;
 }
 
@@ -1112,7 +1112,7 @@ function renderTv(){
     ${bannerHtml}
     <div class="tv-header">
       <div class="tv-brand">
-        <div class="tv-brand-logo">LF</div>
+        <div class="tv-brand-logo"><img src="assetsimg/IMG_0457.png" alt="Logo" style="width:100%;height:100%;border-radius:8px;object-fit:cover;"></div>
         <div>
           <div class="tv-brand-name">LF Promotora</div>
           <div class="tv-brand-filial">${filNome}</div>
